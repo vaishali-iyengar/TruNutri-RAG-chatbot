@@ -100,7 +100,8 @@ module = ["guidance_rag.ingest.parse_pdf", "tests.test_parse_pdf", "tests.test_c
 disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
-# Optional OCR extra (uv sync --extra ocr); CI type-checks without it.
-module = ["onnxruntime", "rapidocr", "rapidocr.*", "rank_bm25", "sentence_transformers", "sentence_transformers.*"]
+# Optional extras (uv sync --extra ocr / --extra embed, which brings torch); CI
+# type-checks without them.
+module = ["onnxruntime", "rapidocr", "rapidocr.*", "rank_bm25", "sentence_transformers", "sentence_transformers.*", "torch", "torch.*"]
 ignore_missing_imports = true
 
