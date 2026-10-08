@@ -49,7 +49,6 @@ OUT_OF_SCOPE_REFUSALS = frozenset(
         RefusalCategory.MEDICAL,
         RefusalCategory.CALORIE_TARGET,
         RefusalCategory.BODY_WEIGHT,
-        RefusalCategory.NUTRIENT_LOOKUP,
     }
 )
 

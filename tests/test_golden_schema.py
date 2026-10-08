@@ -32,7 +32,6 @@ def test_every_category_has_at_least_three_questions(category: GoldenCategory) -
         RefusalCategory.MEDICAL,
         RefusalCategory.CALORIE_TARGET,
         RefusalCategory.BODY_WEIGHT,
-        RefusalCategory.NUTRIENT_LOOKUP,
     ],
 )
 def test_every_out_of_scope_refusal_type_is_covered(refusal: RefusalCategory) -> None:

@@ -66,8 +66,9 @@ def test_rules_load_from_the_data_file_in_priority_order() -> None:
     categories = [r.category for r in rules]
 
     assert len({r.id for r in rules}) == len(rules)  # unique ids
-    assert set(categories) == set(ScopeCategory)
-    # Medical first, nutrient lookups last: a question that is both gets the stronger refusal.
+    # No rule refuses nutrient lookups since 2026-10-08; the category waits for Milestone 3.
+    assert set(categories) == set(ScopeCategory) - {ScopeCategory.NUTRIENT_LOOKUP}
+    # Medical first: a question that is both medical and a calorie question gets medical.
     assert categories == sorted(categories, key=list(ScopeCategory).index)
 
 

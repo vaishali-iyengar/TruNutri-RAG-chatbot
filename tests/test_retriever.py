@@ -16,7 +16,14 @@ from guidance_rag.ingest.index import build_index
 from guidance_rag.models import ScoredChunk
 from guidance_rag.query.rerank import rerank_text
 from guidance_rag.query.retriever import Retriever, build_pool, expand_tables, prune, rrf, select
-from guidance_rag.store import BM25Index, VectorStore, load_chunks, tokenize
+from guidance_rag.store import (
+    BM25Index,
+    TableRowIndex,
+    VectorStore,
+    load_chunks,
+    table_rows,
+    tokenize,
+)
 from tests.test_embed import FakeEmbedder
 from tests.test_models import CHUNK
 
@@ -238,7 +245,7 @@ def test_every_document_reaches_the_pool_of_an_unfiltered_query(store: VectorSto
 
 
 def test_without_per_document_slots_the_pool_is_the_global_list(store: VectorStore) -> None:
-    ev = retriever(store, per_doc_k=0, table_expand=0).retrieve("salt intake per day")
+    ev = retriever(store, per_doc_k=0, table_expand=0, row_k=0).retrieve("salt intake per day")
 
     assert len(ev.pool) <= CONFIG.global_k
 
@@ -282,7 +289,8 @@ def test_each_query_reranks_only_the_chunks_it_found(store: VectorStore) -> None
             calls.append((query, len(texts)))
             return super().score(query, texts)
 
-    r = Retriever(store, BM25Index(ALL_CHUNKS), FakeEmbedder(), Counting(), RetrievalConfig())
+    config = RetrievalConfig(row_k=0)  # table rows add calls of their own (tested below)
+    r = Retriever(store, BM25Index(ALL_CHUNKS), FakeEmbedder(), Counting(), config)
     halves = ["How long can raw chicken stay in the fridge?", "How should raw chicken be handled?"]
 
     ev = r.retrieve("raw chicken fridge and handling", sub_queries=halves)
@@ -303,3 +311,41 @@ def test_unknown_filter_and_missing_reranker_raise(store: VectorStore) -> None:
         retriever(store).retrieve("salt", ["nhs-eatwell"])
     with pytest.raises(ValueError, match="no reranker"):
         Retriever(store, BM25Index(ALL_CHUNKS), FakeEmbedder(), None, RetrievalConfig())
+
+
+# --- Table rows (2026-10-08, nutrient questions) ----------------------------------------
+
+NUTRIENT_TABLE = "icmr-nin-dgi-2024:what-are-nutrient-requirements-recommended-dieta:2"
+
+
+def test_table_rows_carry_caption_and_column_names() -> None:
+    chunks = {c.chunk_id: c for c in ALL_CHUNKS}
+    rows = dict(table_rows(chunks[NUTRIENT_TABLE]))
+
+    assert rows["Milk"].startswith("Table 1.3. Average values of macronutrients")
+    assert rows["Milk"].endswith("Milk: Protein (g) 3.1; Fat (g) 4.2; Carbo hydrates (g) 5; "
+                                 "Energy (Kcal) 72; Total dietary fibre (g) 0")  # fmt: skip
+    wide = chunks["icmr-nin-dgi-2024:what-are-food-groups:4"]  # "column: value; …" layout
+    assert any(label == "Milk/ curd (ml)" for label, _ in table_rows(wide))
+
+
+def test_a_row_matches_only_when_its_label_shares_a_query_word() -> None:
+    rows = TableRowIndex(ALL_CHUNKS)
+
+    milk = rows.search("How much protein does milk have?")
+    assert milk and milk[0].chunk.chunk_id == NUTRIENT_TABLE
+    assert "Milk: Protein (g) 3.1" in milk[0].row
+    # Column names alone ("protein", "energy") don't make a match.
+    assert all(h.chunk.chunk_id != NUTRIENT_TABLE for h in rows.search("protein energy fibre"))
+    assert rows.search("milk", doc_ids=["who-healthy-diet"]) == []
+
+
+def test_a_table_found_by_its_row_is_pooled_and_scored_as_the_row(store: VectorStore) -> None:
+    question = "How much protein does milk have?"
+    with_rows = retriever(store).retrieve(question)
+    without = retriever(store, row_k=0).retrieve(question)
+
+    assert NUTRIENT_TABLE in with_rows.pool and NUTRIENT_TABLE not in without.pool
+    row = next(h.row for h in TableRowIndex(ALL_CHUNKS).search(question))
+    score = dict(with_rows.ranked)[NUTRIENT_TABLE]
+    assert score >= FakeReranker().score(question, [row])[0]  # the better of chunk and row

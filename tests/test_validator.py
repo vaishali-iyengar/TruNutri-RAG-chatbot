@@ -204,3 +204,23 @@ def test_a_claim_combining_two_rows_is_kept() -> None:
 def test_prose_claims_combining_two_bullets_keep_their_numbers(chunk_id: str, text: str) -> None:
     """Row matching applies to table rows only; prose is checked as a whole."""
     assert support_problem(Claim(text=text, chunk_ids=[chunk_id]), [CHUNKS[chunk_id]]) is None
+
+
+# --- Tables without a |---| rule (9.3, nutrient questions) ----------------------------------
+
+NUTRIENT_TABLE = "icmr-nin-dgi-2024:what-are-nutrient-requirements-recommended-dieta:2"
+
+
+def test_a_table_without_a_rule_line_checks_the_claims_own_row() -> None:
+    """ICMR Table 1.3 has no |---| line: its caption and header row must not stand in for
+    the rows, and "Milk" must not borrow a number from "Milk products"."""
+    chunk = CHUNKS[NUTRIENT_TABLE]
+    assert "|---" not in chunk.text
+
+    def problem(text: str) -> str | None:
+        return support_problem(Claim(text=text, chunk_ids=[NUTRIENT_TABLE]), [chunk])
+
+    assert problem("Milk contains 3.1 g of protein per 100 g raw weight.") is None
+    assert problem("Pulses provide 323 Kcal of energy per 100 g raw weight.") is None
+    assert problem("Milk contains 21.6 g of protein per 100 g.") is not None  # milk products
+    assert problem("Pulses provide 343 Kcal per 100 g.") is not None  # cereals' value

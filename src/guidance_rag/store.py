@@ -261,3 +261,92 @@ class BM25Index:
         candidates = np.flatnonzero(allowed & (scores > 0))
         best = candidates[np.argsort(-scores[candidates], kind="stable")][:limit]
         return [Hit(self.chunks[i], float(scores[i])) for i in best]
+
+
+# --- Table rows ----------------------------------------------------------------------------
+
+_RULE_LINE = re.compile(r"^\|[\s|:-]+\|$")  # the |---|---| line under a header row
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def table_rows(chunk: Chunk) -> list[tuple[str, str]]:
+    """(label, search line) for each row of a table chunk. The line carries the table's
+    caption and column names: "Table 1.3. Average values … (Per 100g raw weight)\nMilk:
+    Protein (g) 3.1; Fat (g) 4.2; …", with label "Milk". Handles both table layouts the
+    chunker writes: Markdown rows under a header row, and wide tables written one
+    "column: value; …" line per row (label: the row's first value)."""
+    lines = [ln.strip() for ln in chunk.text.splitlines() if ln.strip()]
+    caption = " ".join(
+        ln for ln in lines if not ln.startswith(("|", "Columns:")) and ": " not in ln[:60]
+    )[:300]
+    head = f"{caption}\n" if caption else ""
+    table = [ln for ln in lines if ln.startswith("|") and not _RULE_LINE.match(ln)]
+    rows: list[tuple[str, str]] = []
+    if len(table) >= 2:
+        header = _cells(table[0])
+        for ln in table[1:]:
+            cells = _cells(ln)
+            pairs = [f"{h} {v}" for h, v in zip(header[1:], cells[1:], strict=False) if v]
+            if cells and cells[0]:
+                rows.append((cells[0], f"{head}{cells[0]}: {'; '.join(pairs)}"))
+    else:  # wide layout: "Food groups (2000 Kcal): Milk/ curd (ml); Foods …: 300; …"
+        for ln in lines:
+            if ln.count(": ") >= 2 and "; " in ln:
+                rows.append((ln.split("; ", 1)[0].split(": ", 1)[1], f"{head}{ln}"))
+    return rows
+
+
+@dataclass(frozen=True)
+class RowHit:
+    chunk: Chunk
+    row: str  # the matching row's search line
+    score: float
+
+
+class TableRowIndex:
+    """BM25 over the rows of every table chunk, built in memory at start-up.
+
+    A table is mostly numbers under a heading that may not name what it lists (ICMR's
+    Table 1.3, protein per 100 g of each food group, sits under "What are nutrient
+    requirements, RDA & EAR"), so "How much protein does milk have?" ranked it ~60th by
+    chunk and it never reached the reranker. Searching rows lets the "Milk" row bring its
+    table into the pool, and gives the reranker one row to score instead of the table.
+
+    A row matches only when its label shares a word with the query ("milk" for the
+    "Milk" row): matching on column names or captions alone pulled unrelated tables into
+    the pools of 11 of 29 golden questions.
+    """
+
+    def __init__(self, chunks: Iterable[Chunk]) -> None:
+        self.rows: list[tuple[Chunk, str, frozenset[str]]] = [
+            (c, row, frozenset(tokenize(label)))
+            for c in chunks
+            if c.table_id
+            for label, row in table_rows(c)
+        ]
+        self._bm25 = BM25Okapi([tokenize(r) for _, r, _ in self.rows]) if self.rows else None
+        self._doc_ids = np.array([c.doc_id for c, _, _ in self.rows])
+
+    def search(
+        self, query: str, doc_ids: Sequence[str] | None = None, limit: int = 5
+    ) -> list[RowHit]:
+        """The best-matching rows whose label shares a query word, one per table chunk."""
+        terms = tokenize(query)
+        if not terms or self._bm25 is None:
+            return []
+        scores = np.asarray(self._bm25.get_scores(terms), dtype=np.float64)
+        allowed = np.isin(self._doc_ids, list(doc_ids)) if doc_ids else np.ones(len(scores), bool)
+        query_terms = set(terms)
+        hits: list[RowHit] = []
+        seen: set[str] = set()
+        for i in np.argsort(-scores, kind="stable"):
+            if len(hits) >= limit or scores[i] <= 0:
+                break
+            chunk, row, label = self.rows[i]
+            if allowed[i] and chunk.chunk_id not in seen and label & query_terms:
+                seen.add(chunk.chunk_id)
+                hits.append(RowHit(chunk, row, float(scores[i])))
+        return hits

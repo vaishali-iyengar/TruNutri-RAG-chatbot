@@ -929,6 +929,21 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 **Done when:** the job runs and passes on `main`.
 **Status:** written, **not run** (the repo has no GitHub remote yet). Nightly at 02:30 UTC and by hand. Builds the index from the committed chunks, runs `run_eval --split all --judge --check`, and uploads the report, metrics and traces. `.cache/llm` (and the embeddings and models) carry over between runs through `actions/cache`, so an unchanged pipeline re-runs from the cache. Needs the `GROQ_API_KEY` repository secret. The first run will answer everything live and needs a full day's Groq quota. Latency only counts questions answered live, so cached nightly runs check every target except latency.
 
+### 9.7 Nutrient questions answered from the corpus (decided 2026-10-08)
+- [x] Remove the NUTRIENT_LOOKUP refusal: rules and classifier category.
+- [x] Make nutrient tables findable: search table rows, not just whole table chunks.
+- [x] Keep answers to nutrient questions to the food asked about.
+- [x] Golden set: nutrient questions that must be answered, and traps that must not be.
+
+**Files:** `src/guidance_rag/query/scope_rules.yaml`, `scope_classifier.py`, `store.py` (`TableRowIndex`), `query/retriever.py`, `validator.py`, `prompts.py`, `eval/golden.yaml`, `eval/redteam.yaml`
+**Done when:** nutrient values the documents give are answered with a citation, and foods they don't list get the not-in-corpus refusal.
+**Status:** done in code; the full eval re-run is pending (Groq quota, next UTC day). **Decision (2026-10-08, by the project owner):** answer nutrient questions from the corpus instead of refusing them. The brief keeps per-food nutrient data for Milestone 3, and that still holds: the corpus only has food-group averages (ICMR DGI Table 1.3, per 100 g raw weight: protein, fat, carbohydrate, energy, fibre for 17 groups such as milk, pulses, egg). The `NUTRIENT_LOOKUP` category stays, unused, as the M3 route. What it took:
+- **Retrieval:** the table ranked ~60th for "How much protein does milk have?" and never reached the reranker. `TableRowIndex` (in memory, BM25 over table rows, each with caption and column names) adds a table whose row *label* matches a query word, at the front of that query's candidates, and the reranker also scores the row: the milk row scores 0.91. Requiring a label match keeps unrelated tables out. The evidence of 8 of 29 golden questions changes, with no gold chunk lost.
+- **Validator:** a table without a `|---|` line had its caption and header row outscore the data rows, so "milk: 3.1 g protein per 100 g" was dropped as unsupported. Now header lines are always kept but never compete, and a row whose whole label is in the claim beats partial matches ("Milk" over "Milk products").
+- **Prompts:** for nutrient-value questions only, a note in the message tells the generator and the evidence check to give values only for the food asked about (or its food group, named as such), with what the value refers to. Recipe, meal or diet totals and other foods don't answer it. Adding it to the message rather than the system prompts keeps every other cached reply valid.
+- **Golden set:** tl-05 (milk protein) and tl-06 (pulses energy) must be answered; nc-05 (paneer protein, with a sample meal plan's "72 g protein" for the whole day as a trap) and nc-06 (banana calories) must get not-in-corpus. They replace os-08/os-09; rt-20 and rt-21 now expect not-in-corpus.
+- **Live probe:** milk 3.1 g, pulses 323 kcal, nuts 41.3 g fat and egg 13.3 g protein (all per 100 g) answered; paneer and banana not in corpus. **Known limitation:** ICMR's infant-feeding recipes give nutrition boxes without serving sizes, so "egg" and "spinach" questions also quote them ("Egg, boiled contains 3.61 g protein"; "Spinach puree contains 1.60 mg iron") with no portion stated.
+
 ### Deliverables
 - `eval/run_eval.py`, `eval/judge.py`, an eval report (`eval/report.md`), an expanded golden set and the eval CI job.
 

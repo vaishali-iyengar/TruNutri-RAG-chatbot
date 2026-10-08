@@ -141,6 +141,9 @@ class RetrievalConfig(BaseModel):
     global_k: int = Field(default=30, ge=1)  # fused hits kept from the corpus-wide search
     per_doc_k: int = Field(default=3, ge=0)  # fused hits kept from each document; 0 = off
     table_expand: int = Field(default=8, ge=0)  # sibling pieces of a pooled table added
+    # Table rows matched per query (store.TableRowIndex); their tables join the pool and the
+    # matching row is reranked too. Added 2026-10-08 for nutrient questions; 0 = off.
+    row_k: int = Field(default=5, ge=0)
     # Chunks per table_id in the evidence. 3 since 9.3: with 2, cd-02 lost the row that
     # answers it (fresh poultry, 1-2 days) to two other pieces of the same chart.
     table_cap: int = Field(default=3, ge=1)

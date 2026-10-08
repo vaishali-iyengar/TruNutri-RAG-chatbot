@@ -2,7 +2,13 @@
 
 from guidance_rag.generator import Generator
 from guidance_rag.llm import LLMError, LLMResponse
-from guidance_rag.prompts import SYSTEM_PROMPT, answer_schema, format_evidence, user_message
+from guidance_rag.prompts import (
+    NUTRIENT_NOTE,
+    SYSTEM_PROMPT,
+    answer_schema,
+    format_evidence,
+    user_message,
+)
 from tests.fakes import CHUNKS, DGI_OILS, WHO_FATS, WHO_SALT, FakeLLM, evidence, reply
 
 EVIDENCE = evidence(DGI_OILS, WHO_FATS)
@@ -149,3 +155,15 @@ def test_a_groq_json_rejection_is_named_in_the_retry() -> None:
 
     assert Generator(llm).generate("Oils?", EVIDENCE) is not None
     assert "its JSON was malformed" in llm.requests[1].user
+
+
+def test_nutrient_value_questions_get_the_nutrient_note() -> None:
+    """The note reaches the generator and the evidence check (both use user_message) only
+    for nutrient-value questions, so other cached replies stay valid."""
+    assert NUTRIENT_NOTE in user_message("How much protein does milk have?", EVIDENCE)
+    assert NUTRIENT_NOTE in user_message("Protein content of eggs", EVIDENCE)
+    for question in [
+        "How much sugar should I eat per day?",  # recommended intake, not a food's value
+        "Which cooking oils should I use?",
+    ]:
+        assert NUTRIENT_NOTE not in user_message(question, EVIDENCE)

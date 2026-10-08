@@ -328,8 +328,8 @@ flowchart LR
     PS --> U
     U --> RR["Cross-encoder score<br/>MiniLM-L-12, best over question + halves"]
     RR --> RK["Ranking<br/>pool order ⊕ rerank order (RRF)"]
-    RK --> SEL["Per-doc selection<br/>doc qualifies at score ≥ τ_doc (0.2),<br/>others ≥ τ_doc_extra (0.1) once one has<br/>top 3 per doc (up to 6 if only one), ≤ 2 per table"]
-    SEL --> EV["Evidence set<br/>max 8 chunks, ≤ 4 docs"]
+    RK --> SEL["Per-doc selection<br/>doc qualifies at score ≥ τ_doc (0.2),<br/>others ≥ τ_doc_extra (0.1) once one has<br/>top 3 per doc (up to 6 if only one), ≤ 3 per table"]
+    SEL --> EV["Evidence set<br/>max 8 chunks, ≤ 3 docs"]
 ```
 
 On the golden set: Recall@10 1.00, MRR 0.91, a gold chunk in the evidence for 27/27 answerable questions, all expected documents for 5/5 cross-document questions, and no evidence for 4/4 not-in-corpus questions, in under 1 s per question on an 8 GB M1.
@@ -341,6 +341,7 @@ On the golden set: Recall@10 1.00, MRR 0.91, a gold chunk in the evidence for 27
 - **Why a small reranker:** `bge-reranker-v2-m3` (2.3 GB) took 31–41 s per question on the 8 GB target laptop. `ms-marco-MiniLM-L-12-v2` (130 MB) takes under 1 s with as good recall, and still gives unanswerable questions low scores (≤ 0.10, against ≥ 0.45 for answerable ones). It reads 512 tokens, so longer chunks are scored in windows of whole lines, keeping the best.
 - **Why fuse the rerank order with the pool order:** the small reranker's order alone is worse than hybrid search's (MRR 0.78 vs 0.87); fused, 0.91. Its *score* still decides what is evidence, because it is the only score that separates answerable from unanswerable questions.
 - **Why two-part questions are split:** "How long can raw chicken stay in the fridge, and how should it be handled …?" needs the fridge chart and the poultry guide; scored as one question, neither passed the threshold. The analyzer splits it (resolving "it" to "raw chicken") and each chunk keeps its best score over the question and its halves.
+- **Why table rows are searched too** (added 2026-10-08): a table is mostly numbers under a heading that may not name what it lists, so ICMR's Table 1.3 (protein, fat, energy per 100 g of each food group) ranked ~60th for "How much protein does milk have?" and never reached the reranker. An in-memory BM25 over table rows, each row carrying its caption and column names, adds a table whose row *label* matches a query word ("Milk") to the pool, and the reranker also scores that row (0.91 for the milk row) since it can't make sense of the whole table.
 - **Why two thresholds:** a question gets evidence only if some document scores ≥ `τ_doc`, which keeps unanswerable questions empty; after that, another document may join at the lower `τ_doc_extra`, so a cross-document question keeps its second voice.
 - Both thresholds are on **rerank** scores, calibrated on the eval set, and recalibrated with `τ_answer` in Phase 7.
 
@@ -489,7 +490,7 @@ Example rules:
 | MEDICAL | `\b(diagnos|treat|cure|my (diabetes|blood pressure|cholesterol)|medication|dose|symptom)\b` | General "what does guidance say about salt and blood pressure" → **allowed**, because it's population guidance, not personal treatment |
 | CALORIE_TARGET | `how many (calories|kcal)` + (`should I|do I need|per day for me`); `calorie (target|goal|deficit)` | "What does WHO say about energy from free sugars (% of energy)?" → allowed |
 | BODY_WEIGHT | `how much should I weigh`, `ideal weight`, `lose \d+ ?(kg|lbs)`, `my BMI`, `target weight` | — |
-| NUTRIENT_LOOKUP | `how (much|many) (protein|iron|calories) (is|are) in` | — |
+| NUTRIENT_LOOKUP | *No rules since 2026-10-08* (was `how (much|many) (protein|iron|calories) (is|are) in`) | Nutrient values are answered from the corpus when it has them, e.g. ICMR's Table 1.3 (food-group averages per 100 g); foods it doesn't list get the not-in-corpus refusal. The category stays for M3 (§13). |
 
 **Layering:**
 1. **Rules (authoritative):** if any rule fires, refuse. No exceptions.
@@ -722,4 +723,4 @@ flowchart LR
     NDB --> C
 ```
 
-Today the `NUTRIENT_LOOKUP` category in the scope guard is a stub refusal. In M3 that branch becomes the router into the structured database.
+Until 2026-10-08 the `NUTRIENT_LOOKUP` category in the scope guard was a stub refusal. It now emits nothing: nutrient questions go through retrieval and are answered when a guidance document gives the value (ICMR's food-group table), or refused as not in the corpus. In M3 the category comes back as a route: a nutrient-value question is sent to the structured database, and the guidance answer (if any) stays in its own section.

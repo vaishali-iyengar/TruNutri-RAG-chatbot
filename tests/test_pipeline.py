@@ -207,7 +207,6 @@ def test_grams_of_salt_are_not_treated_as_a_personal_target() -> None:
         "What should I eat to cure my type 2 diabetes?",
         "Give me a 1500 kcal meal plan.",
         "How much should a 30-year-old woman weigh?",
-        "How much protein is in 100 g of paneer?",
         "I'm pregnant, what should I eat?",
     ],
 )
@@ -218,10 +217,7 @@ def test_a_refused_question_never_reaches_retrieval_or_the_llm(question: str) ->
     answer = p.run(question)
 
     assert answer.status is AnswerStatus.OUT_OF_SCOPE and answer.refusal is not None
-    if answer.refusal.category is RefusalCategory.NUTRIENT_LOOKUP:
-        assert "nutrient" in (answer.markdown or "")
-    else:
-        assert "registered dietitian" in (answer.markdown or "")
+    assert "registered dietitian" in (answer.markdown or "")
     assert retriever.calls == [] and llm.requests == []
 
 

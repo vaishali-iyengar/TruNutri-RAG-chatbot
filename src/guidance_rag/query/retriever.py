@@ -29,7 +29,7 @@ from guidance_rag.config import RetrievalConfig
 from guidance_rag.ingest.embed import Embedder, Vectors
 from guidance_rag.models import Chunk, DocEvidence, Evidence, ScoredChunk
 from guidance_rag.query.rerank import Reranker, rerank_text
-from guidance_rag.store import DEFAULT_INDEX_DIR, BM25Index, VectorStore
+from guidance_rag.store import DEFAULT_INDEX_DIR, BM25Index, TableRowIndex, VectorStore
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +169,7 @@ class Retriever:
         if not (self.config.dense or self.config.bm25):
             raise ValueError("turn on dense search, BM25 or both")
         self.store, self.bm25, self.embedder, self.reranker = store, bm25, embedder, reranker
+        self.rows = TableRowIndex(bm25.chunks) if self.config.row_k else None
         self._chunks = {c.chunk_id: c for c in bm25.chunks}
         self.doc_ids = sorted({c.doc_id for c in bm25.chunks})
         # table_id is unique within a document only ("p33-t1"), so key tables by both.
@@ -238,6 +239,16 @@ class Retriever:
             [c.chunk_id for c in self.candidates(q, v, scope)]
             for q, v in zip(queries, vectors, strict=True)
         ]
+        # Table rows matching each query: their tables join that query's candidates, at the
+        # front, as the most specific lexical matches; ones the reranker scores low still
+        # can't become evidence (tau_doc).
+        filtered = scope if set(scope) != set(self.doc_ids) else None
+        row_hits = [
+            self.rows.search(q, filtered, self.config.row_k) if self.rows else [] for q in queries
+        ]
+        for i, hits in enumerate(row_hits):
+            first = [h.chunk.chunk_id for h in hits]
+            found[i] = list(dict.fromkeys([*first, *found[i]]))
         pool = [self._chunks[c] for c in dict.fromkeys(c for ids in found for c in ids)]
         timings["search"] = _ms(start)
 
@@ -247,11 +258,17 @@ class Retriever:
             # pooled chunk against every query made two-part questions take 6.4 s (9.3).
             text_of = {c.chunk_id: rerank_text(c) for c in pool}
             best: dict[str, float] = {}
-            for q, own in zip(queries, found, strict=True):
+            for q, own, hits in zip(queries, found, row_hits, strict=True):
                 for c, s in zip(
                     own, self.reranker.score(q, [text_of[c] for c in own]), strict=True
                 ):
                     best[c] = max(best.get(c, 0.0), s)
+                # A table found by a row also scores as that row, with the table's caption
+                # and column names: the whole table reads to the reranker as a page of numbers.
+                if hits:
+                    row_scores = self.reranker.score(q, [h.row for h in hits])
+                    for h, s in zip(hits, row_scores, strict=True):
+                        best[h.chunk.chunk_id] = max(best[h.chunk.chunk_id], s)
             ids = [c.chunk_id for c in pool]
             scores = [best[c] for c in ids]
             tau, tau_extra = self.config.tau_doc, self.config.tau_doc_extra

@@ -10,6 +10,7 @@ documents -> claims -> chunk_ids structure made `gpt-oss-120b` produce malformed
 (2 of 27 golden questions in 6.8); the code groups the claims per document instead.
 """
 
+import re
 from typing import Any
 
 from guidance_rag.models import Evidence
@@ -62,9 +63,44 @@ def format_evidence(evidence: Evidence) -> str:
     return "\n\n".join(blocks)
 
 
+_NUTRIENT = (
+    r"(protein|calori\w*|kcal|energy|fats?|carb\w*|sugars?|fib(re|er)|iron|calcium|sodium"
+    r"|potassium|zinc|magnesium|vitamins?( [a-z0-9]+)?|nutrients?|macros|cholesterol)"
+)
+# "How much protein does milk have?", "protein in milk", "calories of a banana".
+NUTRIENT_QUESTION = re.compile(
+    rf"(?i)\bhow (much|many)\b.{{0,30}}\b{_NUTRIENT}\b|\b{_NUTRIENT}\b (content |value )?(in|of)\b"
+)
+
+# Added to the message for nutrient-value questions only, so the generator and the
+# evidence check (both read this message) get the rule without changing their system
+# prompts, whose change would invalidate every cached reply. Found in 9.3: answers quoted
+# an infant recipe's portion ("a boiled egg provides 3.61 g of protein") as the food's
+# value.
+NUTRIENT_NOTE = (
+    "<note>This question asks for a nutrient value. Give a value only for the food asked "
+    'about, or its food group named as such ("milk, as a food group"), together with '
+    "what the value refers to as the passage says (per 100 g raw weight, per serving of a "
+    "recipe, per day in a meal plan). Totals for a recipe, a meal or a whole diet, and "
+    "values for a different food, don't answer it.</note>"
+)
+
+
+# "How much sugar should I eat per day?" asks for recommended intake, not a food's value.
+INTAKE_QUESTION = re.compile(
+    r"(?i)\b(should|recommend\w*|limit\w*|intake|need|needs|per day|a day|daily|each day)\b"
+)
+
+
+def is_nutrient_value_question(question: str) -> bool:
+    return bool(NUTRIENT_QUESTION.search(question)) and not INTAKE_QUESTION.search(question)
+
+
 def user_message(question: str, evidence: Evidence) -> str:
+    note = f"\n\n{NUTRIENT_NOTE}" if is_nutrient_value_question(question) else ""
     return (
-        f"<question>{question}</question>\n\n<passages>\n{format_evidence(evidence)}\n</passages>"
+        f"<question>{question}</question>{note}\n\n"
+        f"<passages>\n{format_evidence(evidence)}\n</passages>"
     )
 
 

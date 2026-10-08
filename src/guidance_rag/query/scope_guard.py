@@ -6,7 +6,8 @@ by prompt injection. It refuses four kinds of question:
 - MEDICAL: diagnosis, treatment, medication, or a person's own condition.
 - CALORIE_TARGET: personal calorie targets and calorie-based plans.
 - BODY_WEIGHT: weight goals, BMI, weight-loss targets.
-- NUTRIENT_LOOKUP: nutrient values of a single food (Milestone 3, not this assistant).
+- NUTRIENT_LOOKUP: kept for Milestone 3 (the nutrient database route); no rule emits it
+  since 2026-10-08, when nutrient questions became answerable from the corpus.
 
 What the guidance says about populations stays in scope: "What does WHO say about salt
 and blood pressure?" is answered.

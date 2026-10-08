@@ -99,11 +99,15 @@ def keywords(text: str) -> set[str]:
 
 
 def header_lines(lines: Sequence[str]) -> list[str]:
-    """Lines that apply to every table row: the caption ("Table: …", "Columns: …") and
-    everything above the |---| rule (the header row)."""
+    """Lines that apply to every table row: everything above the |---| rule (caption and
+    header row) or, in a table without one, up to and including the first "|" row; plus
+    "Table: …" and "Columns: …" lines."""
     rule = next((i for i, ln in enumerate(lines) if _TABLE_RULE.match(ln.strip())), None)
-    head = list(lines[:rule]) if rule is not None else []
-    return head + [ln for ln in lines if ln.startswith(("Table:", "Columns:"))]
+    if rule is None:
+        first_row = next((i for i, ln in enumerate(lines) if ln.lstrip().startswith("|")), None)
+        rule = first_row + 1 if first_row is not None else 0
+    head = list(lines[:rule])
+    return head + [ln for ln in lines[rule:] if ln.startswith(("Table:", "Columns:"))]
 
 
 def matching_lines(claim_words: set[str], source: str) -> list[str]:
@@ -115,10 +119,24 @@ def matching_lines(claim_words: set[str], source: str) -> list[str]:
     lines = [ln for ln in source.splitlines() if ln.strip()]
     if not claim_words:
         return lines
-    overlap = [len(claim_words & keywords(ln)) for ln in lines]
+    # Caption and column names share words with every claim ("protein", "per 100 g"), so
+    # they are always kept and don't compete with the rows (9.3: they outscored the
+    # "Milk" row, and "3.1 g of protein in milk" was dropped as unsupported).
+    head = header_lines(lines)
+    rows = [ln for ln in lines if ln not in head]
+    overlap = [len(claim_words & keywords(ln)) for ln in rows]
     floor = max(1, max(overlap, default=0) - ROW_SLACK)
-    best = [ln for ln, n in zip(lines, overlap, strict=True) if n >= floor]
-    return header_lines(lines) + best
+    best = [ln for ln, n in zip(rows, overlap, strict=True) if n >= floor]
+    # A row whose whole label is in the claim beats rows that only share part of theirs:
+    # "3.1 g of protein in milk" is checked against "Milk", not also "Milk products".
+    exact = [ln for ln in best if (label := row_label(ln)) and label <= claim_words]
+    return head + (exact or best)
+
+
+def row_label(line: str) -> set[str]:
+    """Key words of a table row's first cell ("| Milk products | 21.6 |" -> {milk, product})."""
+    first = line.strip().strip("|").split("|", 1)[0] if line.lstrip().startswith("|") else ""
+    return keywords(first)
 
 
 def support_problem(claim: Claim, cited: Sequence[Chunk]) -> str | None:
