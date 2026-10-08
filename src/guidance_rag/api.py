@@ -207,7 +207,7 @@ def create_app(
         holder.close()
 
     app = FastAPI(
-        title="Dietary guidance assistant",
+        title="TruNutri RAG chatbot",
         summary="Answers food, nutrition and food-safety questions from official guidance, "
         "with citations.",
         lifespan=lifespan,

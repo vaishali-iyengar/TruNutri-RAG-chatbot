@@ -26,7 +26,15 @@ RUN uv sync --locked --no-dev --extra embed --extra ocr --no-install-project
 COPY . .
 RUN uv sync --locked --no-dev --extra embed --extra ocr
 
+# Bake both models and the search index into the image, so a host without a persistent
+# disk (e.g. Cloud Run) starts ready. The chunks are committed, so this only embeds them;
+# no API key is needed. docker-compose sets QDRANT_URL and ignores the baked index.
+RUN python -c "from sentence_transformers import CrossEncoder; \
+from guidance_rag.config import RetrievalConfig; CrossEncoder(RetrievalConfig().reranker_model)" \
+    && python -m guidance_rag.ingest index
+
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
-CMD ["uvicorn", "guidance_rag.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", 8000)}/health')"
+# Cloud Run and similar hosts pass the port in $PORT.
+CMD ["sh", "-c", "exec uvicorn guidance_rag.api:app --host 0.0.0.0 --port ${PORT:-8000}"]
