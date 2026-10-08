@@ -9,13 +9,23 @@ refusal) or a validated `Draft`; the pipeline then applies the output guard and 
 so citation numbers only ever point at claims that survive. Every outcome is an
 `Answer`, refusals included.
 
+The optional LLM scope classifier (5.7) runs alongside the analyzer and retriever when
+the answer step supports it (`RagAnswerer` does): the answer step waits for its verdict
+after retrieval and before any LLM call of its own, so a refusal still stops the
+evidence check and generation. Retrieval is local and has no side effects, and this
+saves the classifier's 0.5-0.8 s on every question (9.3, fix H). The rules always run
+first, alone.
+
 Each run fills a `Trace` (8.3): the pipeline records the guard decisions and the final
 status, and `RagAnswerer` the analysis, retrieval, sufficiency verdict, raw LLM JSON and
 dropped claims.
 """
 
+import contextvars
 import logging
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
@@ -79,6 +89,31 @@ def out_of_scope(category: ScopeCategory, trace_id: str) -> Answer:
     return refused(AnswerStatus.OUT_OF_SCOPE, scope_refusal(category.refusal), trace_id)
 
 
+class ScopeRefused(Exception):
+    """The classifier refused the question while the answer step was running."""
+
+    def __init__(self, category: ScopeCategory) -> None:
+        super().__init__(category.value)
+        self.category = category
+
+
+# The classifier verdict being computed alongside the current question's answer step.
+_pending_scope: ContextVar["Future[GuardResult] | None"] = ContextVar("pending_scope", default=None)
+
+
+def await_scope_check() -> None:
+    """Wait for the classifier running alongside this question, if any; raise
+    `ScopeRefused` if it refuses. Answer steps call this before their first LLM call."""
+    pending = _pending_scope.get()
+    if pending is None:
+        return
+    with timed("classifier_wait"):
+        verdict = pending.result()
+    record(classifier=guard_record(verdict))
+    if not verdict.allowed and verdict.category is not None:
+        raise ScopeRefused(verdict.category)
+
+
 def guard_record(result: GuardResult) -> dict[str, object]:
     return {
         "allowed": result.allowed,
@@ -91,6 +126,9 @@ class RagAnswerer:
     """The answer step (6.7, 7.4): analyzer -> retriever -> sufficiency gate -> generator
     -> validator. NOT_IN_CORPUS when the named document isn't in the corpus, the gate
     finds the evidence insufficient, or no claim survives generation and validation."""
+
+    # The pipeline may run the scope classifier alongside: it is awaited after retrieval.
+    awaits_scope_check = True
 
     def __init__(
         self,
@@ -144,6 +182,9 @@ class RagAnswerer:
         )
         if not evidence.documents:
             return self._not_in_corpus(searched)
+
+        # Everything below may call an LLM: wait for the classifier first (fix H).
+        await_scope_check()
 
         # Sufficiency gate (7.1-7.2): score check, then the LLM evidence check.
         gap: str | None = None
@@ -219,6 +260,9 @@ class Pipeline:
         self.answer = answer
         self.guard = guard or default_guard()
         self.classifier = classifier
+        # Run the classifier alongside the answer step only if the step waits for it.
+        self.parallel = classifier is not None and getattr(answer, "awaits_scope_check", False)
+        self._executor = ThreadPoolExecutor(max_workers=2) if self.parallel else None
 
     def run(
         self, question: str, doc_filter: Sequence[str] | None = None, trace: Trace | None = None
@@ -245,14 +289,19 @@ class Pipeline:
             )
             return out_of_scope(verdict.category, trace_id)
 
-        if self.classifier is not None:
-            with timed("classifier"):
-                extra = self.classifier.check(question)
-            record(classifier=guard_record(extra))
-            if not extra.allowed and extra.category is not None:
-                return out_of_scope(extra.category, trace_id)
+        if self.classifier is not None and self._executor is not None:
+            result = self._answer_with_classifier(question, doc_filter)
+            if isinstance(result, ScopeCategory):
+                return out_of_scope(result, trace_id)
+        else:
+            if self.classifier is not None:
+                with timed("classifier"):
+                    extra = self.classifier.check(question)
+                record(classifier=guard_record(extra))
+                if not extra.allowed and extra.category is not None:
+                    return out_of_scope(extra.category, trace_id)
+            result = self.answer(question, doc_filter)
 
-        result = self.answer(question, doc_filter)
         if isinstance(result, Answer):
             return result.model_copy(update={"trace_id": trace_id})
 
@@ -275,10 +324,36 @@ class Pipeline:
                 not_covered=result.not_covered,
             )
 
+    def _answer_with_classifier(
+        self, question: str, doc_filter: Sequence[str] | None
+    ) -> "Draft | Answer | ScopeCategory":
+        """The answer step with the classifier running in a thread; the category if the
+        classifier refuses. The thread gets a copy of this context, so the classifier sees
+        the request's deadline and records into its trace."""
+        assert self.classifier is not None and self._executor is not None
+        classifier = self.classifier
+
+        def check() -> GuardResult:
+            with timed("classifier"):
+                return classifier.check(question)
+
+        pending = self._executor.submit(contextvars.copy_context().run, check)
+        token = _pending_scope.set(pending)
+        try:
+            result = self.answer(question, doc_filter)
+            await_scope_check()  # also when the step finished without waiting
+        except ScopeRefused as refused:
+            return refused.category
+        finally:
+            _pending_scope.reset(token)
+        return result
+
     def close(self) -> None:
         close = getattr(self.answer, "close", None)
         if callable(close):
             close()
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
 
 
 def load_pipeline(

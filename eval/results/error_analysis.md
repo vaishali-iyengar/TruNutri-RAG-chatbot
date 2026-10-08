@@ -149,5 +149,20 @@ The target is p95 ≤ 8 s per question, excluding waits for the free-tier quota.
   two-part retrieval takes about 3 s instead of 6.4 s.
 - **Live run after fix G:** p50 4.3 s, **p95 8.4 s**: still just over the 8 s target.
   With 6 live questions, p95 is in effect the slowest one, the two-part cd-01 (retrieval
-  4.0 s in that run). Remaining levers, not done: run the scope classifier (0.5–0.8 s)
-  alongside retrieval, or skip the full-question pass when sub-queries cover it.
+  4.0 s in that run).
+- **Fix H (2026-10-08):** the LLM scope classifier now runs in a thread alongside the
+  analyzer and retriever; the answer step waits for its verdict after retrieval and before
+  any LLM call of its own, so a refusal still stops the evidence check and generation.
+  The rules still run first, alone. In the live run the classifier finished before
+  retrieval on 5 of 6 questions (`classifier_wait` 0 s).
+- **Live run after fix H:** p50 5.2 s, **p95 8.4 s: unchanged.** Retrieval itself was
+  slower in this run (cd-01 4.7 s against 3.2 s alone; one-part questions 0.9–3.0 s against
+  0.8–1.8 s): the laptop was busy (load average 5–6 from the browser and editor), and the
+  reranker runs on its CPU. With 6 live questions, p95 is the slowest one, so it moves
+  with machine load. The target is borderline on an 8 GB laptop under load; on a quiet
+  machine one-part questions take about 4 s and two-part ones about 7 s. Further options,
+  not done: a smaller or GPU reranker, skipping the full-question rerank pass when
+  sub-queries cover it, or more live samples.
+- Metric caveat: quota waits are subtracted from latency. Since fix H, a wait inside the
+  classifier thread overlaps retrieval, so subtracting it can understate that question's
+  time (question 1 of the run: a 5.8 s classifier wait).

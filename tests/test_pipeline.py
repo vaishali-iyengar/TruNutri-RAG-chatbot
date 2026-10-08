@@ -4,16 +4,19 @@ Also the "nothing else runs" test moved here from 5.6: a refused question never 
 the retriever or the LLM.
 """
 
+import time
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
 from guidance_rag.generator import Generator
-from guidance_rag.models import AnswerStatus, RefusalCategory
+from guidance_rag.models import AnswerStatus, Evidence, RefusalCategory
 from guidance_rag.pipeline import Pipeline, RagAnswerer
 from guidance_rag.query.analyzer import QueryAnalyzer
-from guidance_rag.query.scope_guard import ScopeGuard
+from guidance_rag.query.scope_guard import GuardResult, ScopeCategory, ScopeGuard
 from guidance_rag.registry import load_registry
+from guidance_rag.tracing import Trace
 from tests.fakes import (
     DGI_OILS,
     FRIDGE_POULTRY,
@@ -220,3 +223,83 @@ def test_a_refused_question_never_reaches_retrieval_or_the_llm(question: str) ->
     else:
         assert "registered dietitian" in (answer.markdown or "")
     assert retriever.calls == [] and llm.requests == []
+
+
+# --- Classifier alongside retrieval (9.3, fix H) -------------------------------------------
+
+
+class SlowClassifier:
+    def __init__(self, verdict: GuardResult, delay: float = 0.0) -> None:
+        self.verdict, self.delay, self.calls = verdict, delay, 0
+
+    def check(self, question: str) -> GuardResult:
+        self.calls += 1
+        time.sleep(self.delay)
+        return self.verdict
+
+
+class SlowRetriever(FakeRetriever):
+    def __init__(self, result: Evidence, delay: float) -> None:
+        super().__init__(result)
+        self.delay = delay
+
+    def retrieve(self, query: str, doc_ids: Any = None, sub_queries: Any = ()) -> Evidence:
+        time.sleep(self.delay)
+        return super().retrieve(query, doc_ids, sub_queries)
+
+
+REFUSE = GuardResult(False, ScopeCategory.MEDICAL, "classifier:test")
+
+
+def parallel(
+    classifier: SlowClassifier, retriever: FakeRetriever, *replies: str
+) -> tuple[Pipeline, FakeLLM]:
+    llm = FakeLLM(*replies)
+    answerer = RagAnswerer(QueryAnalyzer(REGISTRY), retriever, Generator(llm), REGISTRY)  # type: ignore[arg-type]
+    return Pipeline(answerer, classifier=classifier), llm
+
+
+def test_a_classifier_refusal_stops_everything_after_retrieval() -> None:
+    p, llm = parallel(SlowClassifier(REFUSE), FakeRetriever(evidence(DGI_OILS, WHO_FATS)))
+    assert p.parallel
+
+    answer = p.run("Which cooking oils are best?")
+
+    assert answer.status is AnswerStatus.OUT_OF_SCOPE
+    assert answer.refusal is not None and answer.refusal.category is RefusalCategory.MEDICAL
+    assert llm.requests == []  # no evidence check, no generation
+
+
+def test_an_allowed_question_is_answered_and_traced() -> None:
+    p, _ = parallel(
+        SlowClassifier(GuardResult(True)), FakeRetriever(evidence(DGI_OILS, WHO_FATS)), OIL_REPLY
+    )
+    trace = Trace("q")
+
+    answer = p.run("Which cooking oils should I use, and is it OK to reuse oil?", trace=trace)
+
+    assert answer.status is AnswerStatus.ANSWERED
+    assert trace.classifier == {"allowed": True, "category": None, "rule": None}
+    assert {"classifier", "classifier_wait", "retrieval"} <= set(trace.timings_ms)
+
+
+def test_a_classifier_refusal_wins_over_an_early_not_in_corpus() -> None:
+    p, _ = parallel(SlowClassifier(REFUSE), FakeRetriever(evidence(DGI_OILS)))
+
+    answer = p.run("What does the NHS say about oils?")  # unknown document: no retrieval
+
+    assert answer.status is AnswerStatus.OUT_OF_SCOPE
+
+
+def test_the_classifier_runs_alongside_retrieval() -> None:
+    p, _ = parallel(
+        SlowClassifier(GuardResult(True), delay=0.3),
+        SlowRetriever(evidence(DGI_OILS, WHO_FATS), delay=0.3),
+        OIL_REPLY,
+    )
+
+    start = time.perf_counter()
+    p.run("Which cooking oils should I use, and is it OK to reuse oil?")
+
+    assert time.perf_counter() - start < 0.5  # not 0.3 + 0.3
+    p.close()

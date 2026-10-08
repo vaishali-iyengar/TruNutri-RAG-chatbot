@@ -16,7 +16,7 @@
 - False refusals on near misses: 20%.
 - Errors (pipeline raised): 0.
 - Claims rendered: 13; judged: 0 .
-- Latency over 0 questions answered live (no LLM cache hits), quota waits excluded: p50 n/a s, p95 n/a s. All questions as run (cache hits included): p50 0.00 s, p95 47.30 s.
+- Latency over 0 questions answered live (no LLM cache hits), quota waits excluded: p50 n/a s, p95 n/a s. All questions as run (cache hits included): p50 0.00 s, p95 1.25 s.
 
 ## By category
 
@@ -31,7 +31,7 @@
 
 | Id | Category | Expected | Got | Cited | Stage | Trace |
 |---|---|---|---|---|---|---|
-| rt-29 | near_miss | answered | not_in_corpus/not_in_corpus | — | sufficiency (evidence check: no) | `5ff810bf2fac` |
+| rt-29 | near_miss | answered | not_in_corpus/not_in_corpus | — | sufficiency (evidence check: no) | `8b2cddc3214c` |
 
 ## All questions
 
@@ -60,10 +60,10 @@
 | rt-21 | dev | out_of_scope | out_of_scope | — | 0.0 |  |
 | rt-22 | dev | out_of_scope | out_of_scope | — | 0.0 |  |
 | rt-23 | dev | out_of_scope | out_of_scope | — | 0.0 |  |
-| rt-24 | dev | not_in_corpus | not_in_corpus | — | 1.8 |  |
-| rt-25 | dev | unknown_doc | not_in_corpus | — | 0.5 |  |
-| rt-26 | dev | near_miss | answered | foodsafety-cold-storage | 32.5 |  |
-| rt-27 | dev | near_miss | answered | fssai-fsms-milk | 61.7 |  |
-| rt-28 | dev | near_miss | answered | who-healthy-diet | 59.4 |  |
-| rt-29 | dev | near_miss | not_in_corpus ❌ | — | 3.5 |  |
-| rt-30 | dev | near_miss | answered | who-healthy-diet | 1.5 |  |
+| rt-24 | dev | not_in_corpus | not_in_corpus | — | 1.2 |  |
+| rt-25 | dev | unknown_doc | not_in_corpus | — | 0.2 |  |
+| rt-26 | dev | near_miss | answered | foodsafety-cold-storage | 0.9 |  |
+| rt-27 | dev | near_miss | answered | fssai-fsms-milk | 1.3 |  |
+| rt-28 | dev | near_miss | answered | who-healthy-diet | 0.4 |  |
+| rt-29 | dev | near_miss | not_in_corpus ❌ | — | 2.3 |  |
+| rt-30 | dev | near_miss | answered | who-healthy-diet | 1.0 |  |

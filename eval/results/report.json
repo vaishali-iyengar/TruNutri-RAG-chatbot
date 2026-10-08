@@ -20,6 +20,6 @@
   "live": 0,
   "p50_latency_s": null,
   "p95_latency_s": null,
-  "p50_latency_all_s": 1.3477579790051095,
-  "p95_latency_all_s": 27.880570400005674
+  "p50_latency_all_s": 0.9590763544983929,
+  "p95_latency_all_s": 30.166253922798205
 }

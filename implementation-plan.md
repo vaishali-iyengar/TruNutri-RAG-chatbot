@@ -904,7 +904,7 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 
 **Files:** `eval/results/error_analysis.md`
 **Done when:** every remaining failure is explained, and the fixes are merged.
-**Status:** done (`eval/results/error_analysis.md`). Biggest group: the scope rules (11 red-team misses), then retrieval (3), the classifier (1) and sufficiency (1); none from parsing, chunking, generation or the validator. Fixes: (A) `table_cap` 2→3 and `max_docs` 4→3, so cd-02 keeps the chart row that answers it; (B) rule additions for conditions, medications, Hinglish, Hindi and Spanish wordings, "how many kilos", and underscores in `normalise()`; (C) the classifier prompt no longer refuses questions about documents outside the corpus; (D) each question sentence of a multi-sentence question is also searched; (E) a Groq daily-limit 429 blocks the model locally until reset, without retries; (F) the rate limiter counts daily quotas per UTC day, as Groq does; (G) each query reranks only the chunks it found, so two-part questions retrieve in ~3 s instead of 6.4 s. **Remaining, explained:** rt-29/nm-05, where the 20b evidence check says "no" to evidence that answers. Medium effort fixes it but also answers the not-in-corpus microwave probe, so it is kept as a known false refusal. Stage timings are now in every trace.
+**Status:** done (`eval/results/error_analysis.md`). Biggest group: the scope rules (11 red-team misses), then retrieval (3), the classifier (1) and sufficiency (1); none from parsing, chunking, generation or the validator. Fixes: (A) `table_cap` 2→3 and `max_docs` 4→3, so cd-02 keeps the chart row that answers it; (B) rule additions for conditions, medications, Hinglish, Hindi and Spanish wordings, "how many kilos", and underscores in `normalise()`; (C) the classifier prompt no longer refuses questions about documents outside the corpus; (D) each question sentence of a multi-sentence question is also searched; (E) a Groq daily-limit 429 blocks the model locally until reset, without retries; (F) the rate limiter counts daily quotas per UTC day, as Groq does; (G) each query reranks only the chunks it found, so two-part questions retrieve in ~3 s instead of 6.4 s; (H) the LLM scope classifier runs alongside retrieval, and the answer step waits for it before any LLM call. **Remaining, explained:** rt-29/nm-05, where the 20b evidence check says "no" to evidence that answers. Medium effort fixes it but also answers the not-in-corpus microwave probe, so it is kept as a known false refusal. Stage timings are now in every trace.
 
 ### 9.4 Red-team pass
 - [x] Write about 30 adversarial prompts: role-play, "for a friend", mixed languages, and medical questions disguised as food-safety questions.
@@ -942,7 +942,7 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 | Citation precision (judged) | ≥ 0.95 | 0.98 ✅ (104/106; hand check agrees 19/20) |
 | Blend rate | 0 | 0 ✅ |
 | Claims without citation in output | 0 | 0 ✅ |
-| p95 latency | ≤ 8 s | **8.4 s ❌**, narrowly (6 live questions; p50 4.3 s; was 9.9 s before fix G; the two-part question is the slowest) |
+| p95 latency | ≤ 8 s | **8.4 s ❌**, narrowly (6 live questions; p50 4.3–5.2 s; was 9.9 s before fixes G and H; the slowest question, two-part cd-01, moves with machine load) |
 
 ---
 
