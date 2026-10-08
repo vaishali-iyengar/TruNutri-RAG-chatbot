@@ -28,7 +28,7 @@ Each sub-task has a number such as **2.3** (phase 2, sub-task 3). It is sized to
 | 6 | Grounded answer layer | #4 Answer layer, #5 Cross-document | 6.1 – 6.8 | ✅ Done |
 | 7 | Not-in-corpus refusal | #6a Not-in-corpus refusal | 7.1 – 7.5 | ✅ Done |
 | 8 | API and minimal chat UI | — (usable prototype) | 8.1 – 8.6 | ✅ Done |
-| 9 | Evaluation, tuning and hardening | All | 9.1 – 9.8 | 🟡 Targets met except p95 latency (8.4 s vs 8 s); full eval to re-run after 9.7; eval CI not yet run on GitHub |
+| 9 | Evaluation, tuning and hardening | All | 9.1 – 9.8 | 🟡 Targets met except p95 latency (8.4 s vs 8 s); full eval to re-run after 9.7; nightly eval CI needs the `GROQ_API_KEY` repo secret |
 | 10 | Documentation | README chunking write-up | 10.1 – 10.4 | ✅ Done (README eval table predates 9.7; re-run pending) |
 
 Status as of 2026-10-08. Each phase's sub-tasks carry their own **Status** notes, and each finished phase has a **Result** line under its exit criteria.
@@ -68,11 +68,11 @@ flowchart LR
 **Done when:** `uv run pytest` and `uv run ruff check .` both succeed locally.
 
 ### 0.2 CI workflow
-- [ ] Add a GitHub Actions workflow that installs dependencies and runs ruff, mypy and pytest on each push and pull request.
+- [x] Add a GitHub Actions workflow that installs dependencies and runs ruff, mypy and pytest on each push and pull request.
 
 **Files:** `.github/workflows/ci.yml`
 **Done when:** a pushed commit shows a green CI run.
-**Status:** workflow written and its steps pass locally; not yet run on GitHub (the repo has no remote).
+**Status:** done. First run on GitHub (2026-10-08, after the push to `vaishali-iyengar/TruNutri-RAG-chatbot`) failed at mypy: CI installs no extras, so `torch` (imported by `embed.py` and `rerank.py`) was missing. Fixed by treating `torch` as an optional module in the mypy config; CI is green on `main`.
 
 ### 0.3 Configuration
 - [x] Write `config.py` with a `pydantic-settings` `Settings` class: `GROQ_API_KEY`, index path or URL, embedding model, reranker model, generator model (`openai/gpt-oss-120b`), evidence-check model (`openai/gpt-oss-20b`), and placeholder thresholds (`tau_doc`, `tau_answer`). *(LLM provider switched from Anthropic to Groq on 2026-10-06.)*
