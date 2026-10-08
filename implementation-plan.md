@@ -29,7 +29,7 @@ Each sub-task has a number such as **2.3** (phase 2, sub-task 3). It is sized to
 | 7 | Not-in-corpus refusal | #6a Not-in-corpus refusal | 7.1 – 7.5 | ✅ Done |
 | 8 | API and minimal chat UI | — (usable prototype) | 8.1 – 8.6 | ✅ Done |
 | 9 | Evaluation, tuning and hardening | All | 9.1 – 9.8 | 🟡 Targets met except p95 latency (8.4 s vs 8 s); full eval to re-run after 9.7; eval CI not yet run on GitHub |
-| 10 | Documentation | README chunking write-up | 10.1 – 10.4 | Not started |
+| 10 | Documentation | README chunking write-up | 10.1 – 10.4 | ✅ Done (README eval table predates 9.7; re-run pending) |
 
 Status as of 2026-10-08. Each phase's sub-tasks carry their own **Status** notes, and each finished phase has a **Result** line under its exit criteria.
 
@@ -977,33 +977,37 @@ Measured before 9.7 changed nutrient handling and the golden set; the next full 
 **Goal:** a README that meets the brief, and an architecture doc that matches the code.
 
 ### 10.1 README: what it does and the corpus
-- [ ] Describe what the assistant does and doesn't do, with an example of each refusal type.
-- [ ] Add the corpus table: document, publisher, year, URL and retrieval date. Explain why EFSA and the Canadian Nutrient File were excluded.
+- [x] Describe what the assistant does and doesn't do, with an example of each refusal type.
+- [x] Add the corpus table: document, publisher, year, URL and retrieval date. Explain why EFSA and the Canadian Nutrient File were excluded.
 
 **Files:** `README.md`
 **Done when:** every included document is listed with full provenance.
+**Status:** done. "What it does and doesn't do": a real cross-document answer, how nutrient values are handled (since 9.7), and one example of each refusal type (medical, calorie target, body weight, not in the documents, unknown document) with the exact messages the code produces. The corpus table gives document, publisher, year, URL and retrieval date for all 7, notes the archived FoodSafety.gov copy, and explains the EFSA and Canadian Nutrient File exclusions and the 3 reserves.
 
 ### 10.2 README: chunking choice and its cost
 This section is required by the brief.
-- [ ] Explain the structure-aware chunking choice and why fixed-size chunking was rejected.
-- [ ] Start from §5.4 and add real numbers from Phases 3 and 9: chunk size distribution, number of tables hand-corrected, and recall of structure-aware vs. fixed-size chunking if measured.
+- [x] Explain the structure-aware chunking choice and why fixed-size chunking was rejected.
+- [x] Start from §5.4 and add real numbers from Phases 3 and 9: chunk size distribution, number of tables hand-corrected, and recall of structure-aware vs. fixed-size chunking if measured.
 
 **Files:** `README.md`
 **Done when:** the section states both the choice and what it cost, with numbers.
+**Status:** done. The fixed-size comparison was measured for intactness, not recall: `eval/chunking_comparison.py` (`eval/results/chunking.md`) re-chunks the same parsed text into 400-token windows with 50 overlap. That cuts **69 of 96 tables (72%)** and **11 of 34 recommendations (32%)**, and leaves **183 pieces** with table rows but no header; structure-aware chunking cuts none. Costs with numbers: chunk sizes 4–774 tokens (median 261; p10 69, p90 497); 2 tables hand-corrected, 7 dropped, 34 without a header row; per-document parser config; OCR pages; repeated headers; and table-row indexing needed so tables can be found (9.7). A retrieval-recall comparison against a fixed-size index was not run.
 
 ### 10.3 README: setup, results and limitations
-- [ ] Add setup, ingestion and run instructions.
-- [ ] Add the eval results table from Phase 9.
-- [ ] List known limitations, e.g. documents are frozen at the retrieval date, only English is supported, and tables are only as good as the parser.
+- [x] Add setup, ingestion and run instructions.
+- [x] Add the eval results table from Phase 9.
+- [x] List known limitations, e.g. documents are frozen at the retrieval date, only English is supported, and tables are only as good as the parser.
 
 **Files:** `README.md`
 **Done when:** someone who hasn't seen the project can follow it to a working chat.
+**Status:** done. Quick start (Docker or local), a "how it works" summary, development setup (incl. the iCloud `.venv` note), ingestion, running (API, `scripts/ask.py`, Docker, caching), evaluation commands and CI. The results table is Phase 9's (2026-10-08), labelled as measured before 9.7, with the live nutrient check and how to re-run. Limitations: frozen documents, English only, table and OCR quality, food-group-only nutrient values and recipe boxes, the known false refusal, population guidance only, free-tier limits and latency. The Docker path was followed end to end in 8.5.
 
 ### 10.4 Update the architecture doc
-- [ ] Update ARCHITECTURE.md wherever the implementation changed the design.
+- [x] Update ARCHITECTURE.md wherever the implementation changed the design.
 
 **Files:** `ARCHITECTURE.md`
 **Done when:** the document matches the code.
+**Status:** done (2026-10-08): brought up to date in one pass (components, diagrams, chunking limits, retrieval, prompts, validator, scope guard, API contract and errors, tracing, eval, repository layout), and §5.4 now carries the measured costs.
 
 ### Deliverables
 - README and updated architecture doc.
@@ -1011,6 +1015,9 @@ This section is required by the brief.
 ### Exit criteria
 - A new developer can run the project from the README alone.
 - The README contains the chunking section required by the brief.
+
+
+**Result (2026-10-08):** both pass. The README's quick start and development sections cover setup, ingestion, running and evaluation, with every command checked against the Makefile and CLI (the Docker path was run end to end in 8.5). "Chunking: the choice and what it cost" states the choice, why fixed-size was rejected (measured: 72% of tables and 32% of recommendations cut), and its costs with numbers. Open: the README's eval table is Phase 9's pre-9.7 run; update it after the next full `make eval`.
 
 ---
 

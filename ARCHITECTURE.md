@@ -247,16 +247,17 @@ class Chunk(BaseModel):
     ocr: bool = False
 ```
 
-### 5.4 What this choice costs (for the README)
+### 5.4 What this choice costs
 
 | Cost | Impact | Mitigation |
 |------|--------|------------|
 | A custom parser for each layout | DGI 2024 and the FSSAI PDFs use different heading styles; heading detection needs per-document tuning | Per-document parser config in the registry (heading font sizes, numbering regex) |
-| Chunk sizes vary widely (50 → 1,000 tokens) | Big chunks dilute embeddings; small ones lack context | Contextual headers; a reranker evens out scoring |
-| Table extraction is brittle | Merged cells and multi-page tables in PDFs | QC report flags tables. Hand-correct the ~5 that matter most (storage times) as override CSVs |
+| Chunk sizes vary widely (4 → 774 tokens; median 261) | Big chunks dilute embeddings; small ones lack context | Contextual headers; a reranker evens out scoring |
+| Table extraction is brittle | Merged cells and multi-page tables in PDFs | QC report flags tables. 2 FSSAI Milk tables hand-corrected as override CSVs; 7 garbled tables dropped; JECFA's unruled tables kept as text |
+| Tables can be hard to find | A table of numbers under a heading that doesn't name its contents ranked ~60th for a direct question | Table rows indexed on their own, with caption and column names (§6.3) |
 | Repeated table headers inflate the index | Slightly more storage and tokens | Negligible at this corpus size (903 chunks) |
 | Atomic recommendations can exceed the ideal size | Long rationale sections become one big chunk | Hard cap at ~1,000 tokens, then split at sub-points with the guideline title repeated |
-| More engineering time than a `RecursiveCharacterTextSplitter` | Slower first iteration | Worth it: cut tables are the main failure mode for this corpus |
+| More engineering time than a `RecursiveCharacterTextSplitter` | Slower first iteration | Worth it: on the same parsed text, 400-token windows (50 overlap) would cut 69 of 96 tables and 11 of 34 numbered recommendations, and leave 183 pieces with table rows but no header (`eval/chunking_comparison.py`, `eval/results/chunking.md`) |
 
 ---
 
