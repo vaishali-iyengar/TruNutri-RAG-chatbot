@@ -4,6 +4,8 @@ This plan deploys the whole project, the backend and the redesigned chat page, a
 
 *Written 2026-10-08.*
 
+> **Status (2026-10-08): deployed.** Service `trunutri` in project `trunutri-rag-chatbot`, region `us-central1`, revision `trunutri-00001-ltg`: **https://trunutri-1086585845539.us-central1.run.app**. Steps 2 and 3 are done (APIs enabled, build timeout 3600 s, secret `groq-api-key` created from the local `.env` and readable by the Cloud Run service account, deployed from branch `initial-build` with `make deploy`'s flags). Checked live: `/health` ok with 7 documents, the page loads, a fridge-storage question answered with a FoodSafety.gov citation, a medical question refused. Still open: the GitHub push and merge (Step 1), the $1 budget alert if not set, and the full Step 4 checklist.
+
 ---
 
 ## 1. What gets deployed
