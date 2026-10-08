@@ -944,6 +944,13 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 - **Golden set:** tl-05 (milk protein) and tl-06 (pulses energy) must be answered; nc-05 (paneer protein, with a sample meal plan's "72 g protein" for the whole day as a trap) and nc-06 (banana calories) must get not-in-corpus. They replace os-08/os-09; rt-20 and rt-21 now expect not-in-corpus.
 - **Live probe:** milk 3.1 g, pulses 323 kcal, nuts 41.3 g fat and egg 13.3 g protein (all per 100 g) answered; paneer and banana not in corpus. **Known limitation:** ICMR's infant-feeding recipes give nutrition boxes without serving sizes, so "egg" and "spinach" questions also quote them ("Egg, boiled contains 3.61 g protein"; "Spinach puree contains 1.60 mg iron") with no portion stated.
 
+### 9.8 One-paragraph answers (decided 2026-10-08)
+- [x] Render the answer as one paragraph instead of one section per document, keeping one source per sentence.
+
+**Files:** `src/guidance_rag/render.py`, `models.py` (`Sentence`, `SourceDocument.cite_as`), `pipeline.py`, `corpus/registry.yaml`, `tests/test_render.py`, `ui/index.html`
+**Done when:** a cross-document answer reads as one answer, and every sentence still cites exactly one document.
+**Status:** done. **Decision (project owner):** "one answer, each sentence sourced" over a fully merged answer, which would break brief #5. The claims, validator and prompts are unchanged, so no cached reply or eval result changes. The renderer joins each document's validated claims into one paragraph, best document first, each sentence with its own `[n]`. Where the source changes, a code-built lead-in from the registry's new `cite_as` field names it ("According to WHO's healthy diet fact sheet, …"), keeping names and acronyms capitalised. The API adds `answer` (sentences in order, each with `doc_id` and citations) next to `sections`. The fixed closing line is gone, since the lead-ins name each source. The chat page renders `answer` as one paragraph with a citation badge per sentence. **Note:** `ui/index.html` also holds a redesign from a separate session that isn't committed yet, so this page change is committed with it, not here.
+
 ### Deliverables
 - `eval/run_eval.py`, `eval/judge.py`, an eval report (`eval/report.md`), an expanded golden set and the eval CI job.
 

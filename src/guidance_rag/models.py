@@ -173,6 +173,9 @@ class SourceDocument(_Model):
     doc_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     title: str
     short_name: str
+    # How an answer names the document in a sentence ("According to WHO's healthy diet
+    # fact sheet, …"). Falls back to the title.
+    cite_as: str | None = None
     publisher: str
     # Publication year. Required for included documents; optional for reserve and
     # excluded ones, which are not downloaded, so their year is not checked.
@@ -318,6 +321,15 @@ class Citation(_Model):
     retrieval_date: date
 
 
+class Sentence(_Model):
+    """One sentence of the rendered answer: a claim from one document, with a lead-in
+    naming that document where the answer moves to it. Built in code, never by the LLM."""
+
+    text: str
+    doc_id: str
+    citations: list[int]
+
+
 class Refusal(_Model):
     category: RefusalCategory
     message: str
@@ -328,6 +340,7 @@ class Answer(_Model):
 
     status: AnswerStatus
     sections: list[DocAnswer] = Field(default_factory=list)
+    sentences: list[Sentence] = Field(default_factory=list)  # the answer, in reading order
     citations: list[Citation] = Field(default_factory=list)
     docs_searched: list[str] = Field(default_factory=list)
     refusal: Refusal | None = None

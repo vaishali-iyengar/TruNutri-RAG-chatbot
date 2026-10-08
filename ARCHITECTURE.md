@@ -422,14 +422,10 @@ The support check (G) is simple: every number in the claim must appear in the ci
 
 ### 6.7 Rendering
 
-The renderer turns validated claims into the final answer. Citation fields come **only from chunk metadata**:
+The renderer turns validated claims into the final answer. Citation fields come **only from chunk metadata**. Since 2026-10-08 the answer reads as **one paragraph**: each document's claims in turn (best-scoring document first), every sentence one claim from one document with its own citation marks, and a lead-in built in code from the registry's `cite_as` where the answer moves to a document. Sources are still never blended into one claim (brief #5); only the layout changed. The API returns the sentences in order (`answer`) and, as before, the claims per document (`sections`).
 
 ```markdown
-**Dietary Guidelines for Indians — ICMR-NIN (2024)**
-- Recommends using a combination of oils rather than a single oil. [1]
-
-**FSMS Guidance Document: … — FSSAI (2019)**
-- Advises against repeatedly reheating cooking oil … [2]
+According to ICMR-NIN's Dietary Guidelines for Indians, oil once used for frying may be used for curry preparation but not for frying again [1]. Repeated heating of cooking oils generates harmful compounds and must be avoided [2]. According to WHO's healthy diet fact sheet, polyunsaturated oils such as soybean, canola and sunflower oil are preferable to butter, lard and ghee [3].
 
 ---
 [1] Dietary Guidelines for Indians · ICMR – National Institute of Nutrition · 2024 · §Guideline 9 > Cooking oils · p. 87 · https://nin.res.in/…/DGI_2024.pdf#page=87
@@ -520,8 +516,8 @@ flowchart LR
 ```
 
 Rules:
-- One section per document. Section order follows the best rerank score.
-- No summary sentence that blends sources. Any optional closing line is a fixed code template ("These are separate recommendations from different authorities."), not LLM text.
+- Each document's claims stay together, in order of best rerank score; since 2026-10-08 they are rendered as one paragraph, with a code-built lead-in ("According to WHO's healthy diet fact sheet, …") where the source changes.
+- No sentence blends sources: each is one validated claim citing one document. No LLM-written summary. (The fixed closing line, "These are separate recommendations from different authorities.", was dropped with the paragraph layout, whose lead-ins already name each source.)
 - If documents disagree, both are shown as written. No reconciliation.
 
 ---

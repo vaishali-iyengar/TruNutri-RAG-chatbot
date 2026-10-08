@@ -59,6 +59,7 @@ class Draft:
     status: AnswerStatus = AnswerStatus.ANSWERED
     not_covered: str | None = None
     dropped: list[DroppedClaim] = field(default_factory=list)
+    cite_as: dict[str, str] = field(default_factory=dict)  # doc_id -> name in the answer
 
 
 class AnswerStep(Protocol):
@@ -244,6 +245,7 @@ class RagAnswerer:
             status=AnswerStatus.PARTIAL if partial else AnswerStatus.ANSWERED,
             not_covered=(generation.not_covered or gap) if partial else None,
             dropped=validation.dropped,
+            cite_as={d: doc.cite_as for d, doc in self.documents.items() if doc.cite_as},
         )
 
     def close(self) -> None:
@@ -322,6 +324,7 @@ class Pipeline:
                 docs_searched=result.docs_searched,
                 status=result.status,
                 not_covered=result.not_covered,
+                cite_as=result.cite_as,
             )
 
     def _answer_with_classifier(

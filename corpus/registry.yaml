@@ -8,6 +8,7 @@ documents:
 - doc_id: icmr-nin-dgi-2024
   title: Dietary Guidelines for Indians
   short_name: ICMR-NIN DGI 2024
+  cite_as: "ICMR-NIN's Dietary Guidelines for Indians"
   publisher: ICMR – National Institute of Nutrition
   year: 2024
   source_url: https://nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf
@@ -48,6 +49,7 @@ documents:
 - doc_id: who-healthy-diet
   title: Healthy diet (fact sheet)
   short_name: WHO Healthy diet
+  cite_as: "WHO's healthy diet fact sheet"
   publisher: World Health Organization
   year: 2026
   source_url: https://www.who.int/news-room/fact-sheets/detail/healthy-diet
@@ -70,6 +72,7 @@ documents:
 - doc_id: foodsafety-cold-storage
   title: Cold Food Storage Chart
   short_name: FoodSafety.gov cold storage chart
+  cite_as: "FoodSafety.gov's cold food storage chart"
   publisher: FoodSafety.gov (U.S. Department of Health and Human Services)
   year: 2023
   source_url: https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts
@@ -98,6 +101,7 @@ documents:
   title: 'Food Industry Guide to Implement GMP/GHP Requirements: Milk and Milk Products (Guidance Document,
     Food Safety Management System)'
   short_name: FSSAI FSMS Milk
+  cite_as: "FSSAI's hygiene guide for milk and milk products"
   publisher: Food Safety and Standards Authority of India (FSSAI)
   year: 2018
   source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Milk_14_03_2019.pdf
@@ -134,6 +138,7 @@ documents:
   title: 'Food Industry Guide to Implement GMP/GHP Requirements: Meat and Meat Products (Poultry) (Guidance
     Document, Food Safety Management System)'
   short_name: FSSAI FSMS Poultry
+  cite_as: "FSSAI's hygiene guide for meat and poultry"
   publisher: Food Safety and Standards Authority of India (FSSAI)
   year: 2018
   source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Poultry_06_01_2020.pdf
@@ -168,6 +173,7 @@ documents:
   title: 'Food Industry Guide to Implement GMP/GHP Requirements: Processed Fruits and Vegetables (Guidance
     Document, Food Safety Management System)'
   short_name: FSSAI FSMS Fruits & Vegetables
+  cite_as: "FSSAI's hygiene guide for processed fruits and vegetables"
   publisher: Food Safety and Standards Authority of India (FSSAI)
   year: 2019
   source_url: https://www.fssai.gov.in/docs/business/guidance/FSMS_Guidance_Document_FruitsVegetable_15_03_2019.pdf
@@ -205,6 +211,7 @@ documents:
   title: 'Evaluation of certain food additives: one-hundredth report of the Joint FAO/WHO Expert Committee
     on Food Additives (WHO Technical Report Series 1058)'
   short_name: JECFA TRS 1058
+  cite_as: "the WHO/FAO expert committee on food additives (JECFA)"
   publisher: World Health Organization and Food and Agriculture Organization of the United Nations
   year: 2025
   source_url: https://www.who.int/publications/i/item/9789240116030

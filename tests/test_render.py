@@ -4,7 +4,7 @@ import re
 
 from guidance_rag.models import Answer, AnswerStatus, Chunk, Claim, DocAnswer
 from guidance_rag.registry import load_registry
-from guidance_rag.render import CLOSING_LINE, api_response, render_answer
+from guidance_rag.render import api_response, lead_in, render_answer
 from tests.fakes import CHUNKS, DGI_OILS, WHO_FATS, WHO_SALT
 
 SECTIONS = [
@@ -31,10 +31,13 @@ SECTIONS = [
     ),
 ]
 ORDER = ["icmr-nin-dgi-2024", "who-healthy-diet"]  # DGI scored best
+CITE_AS = {d.doc_id: d.cite_as or d.title for d in load_registry().included}
 
 
 def render() -> Answer:
-    return render_answer(SECTIONS, CHUNKS, "trace-1", doc_order=ORDER, docs_searched=ORDER)
+    return render_answer(
+        SECTIONS, CHUNKS, "trace-1", doc_order=ORDER, docs_searched=ORDER, cite_as=CITE_AS
+    )
 
 
 def test_two_document_answer_snapshot() -> None:
@@ -47,14 +50,10 @@ def test_two_document_answer_snapshot() -> None:
 
     expected = "\n".join(
         [
-            f"**{oils.doc_title} — {oils.publisher} ({oils.year})**",
-            "- Repeated heating of oils generates harmful compounds. [1]",
-            "",
-            f"**{fats.doc_title} — {fats.publisher} ({fats.year})**",
-            "- Unsaturated oils such as soybean and canola are preferable. [2]",
-            "- Adults should limit salt to less than 5 grams a day. [3][2]",
-            "",
-            CLOSING_LINE,
+            "According to ICMR-NIN's Dietary Guidelines for Indians, repeated heating of oils "
+            "generates harmful compounds [1]. According to WHO's healthy diet fact sheet, "
+            "unsaturated oils such as soybean and canola are preferable [2]. Adults should "
+            "limit salt to less than 5 grams a day [3][2].",
             "",
             "---",
             cite(1, oils),
@@ -100,10 +99,35 @@ def test_every_url_starts_with_a_registry_source_url() -> None:
     assert all(any(u.startswith(s) for s in sources) for u in urls), urls
 
 
-def test_a_single_document_answer_has_no_closing_line() -> None:
+def test_the_answer_is_one_paragraph_of_single_source_sentences() -> None:
+    """Brief #5: never blend sources. Each sentence is one claim from one document, and
+    a lead-in names the document where the answer moves to it (2026-10-08)."""
+    answer = render()
+    doc_of = {c.n: c.doc_id for c in answer.citations}
+
+    assert [s.doc_id for s in answer.sentences] == [
+        "icmr-nin-dgi-2024",
+        "who-healthy-diet",
+        "who-healthy-diet",
+    ]
+    for s in answer.sentences:
+        assert {doc_of[n] for n in s.citations} == {s.doc_id}
+    starts = [s.text.startswith("According to ") for s in answer.sentences]
+    assert starts == [True, True, False]  # only where the document changes
+    assert (answer.markdown or "").count("\n\n") == 1  # paragraph, then sources
+
+
+def test_lead_ins_keep_names_and_acronyms_capitalised() -> None:
+    assert lead_in("X", "Milk contains 3.1 g.") == "According to X, milk contains 3.1 g."
+    assert lead_in("X", "WHO recommends less salt.") == "According to X, WHO recommends less salt."
+    assert lead_in("X", "Indian diets lack fibre.") == "According to X, Indian diets lack fibre."
+    assert lead_in("X", "INS 330 is permitted.") == "According to X, INS 330 is permitted."
+
+
+def test_without_cite_as_the_lead_in_uses_the_title() -> None:
     answer = render_answer(SECTIONS[1:], CHUNKS, "t")
 
-    assert CLOSING_LINE not in (answer.markdown or "")
+    assert answer.sentences[0].text.startswith(f"According to {CHUNKS[DGI_OILS].doc_title}, ")
 
 
 def test_a_partial_answer_says_what_is_not_covered() -> None:
@@ -141,3 +165,11 @@ def test_api_response_matches_the_contract() -> None:
     assert data["sections"][1]["claims"][1]["citations"] == [3, 2]
     assert data["citations"][0]["url"] == CHUNKS[DGI_OILS].deep_link
     assert data["trace_id"] == "trace-1"
+
+
+def test_the_api_answer_lists_sentences_in_reading_order() -> None:
+    body = api_response(render())
+
+    assert [a["citations"] for a in body["answer"]] == [[1], [2], [3, 2]]
+    assert body["answer"][0]["text"].startswith("According to ICMR-NIN's")
+    assert [s["doc_id"] for s in body["sections"]] == ORDER  # still there, per document

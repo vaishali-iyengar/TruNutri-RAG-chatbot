@@ -1,17 +1,24 @@
 """Renderer: validated claims to the final answer (implementation-plan.md, 6.6; §6.7, §10).
 
 Citation fields (title, publisher, year, section, page, link) come only from chunk
-metadata, never from LLM text. Citations are numbered in reading order; each document
-gets its own section, in the order given (best rerank score first). A multi-document
-answer ends with a fixed closing line, never an LLM summary that could blend sources.
+metadata, never from LLM text. Citations are numbered in reading order.
+
+The answer reads as one paragraph (decided 2026-10-08): the claims of each document in
+turn, best-scoring document first, each sentence with its own citation marks. When the
+answer moves to a document, its first sentence starts with a lead-in naming it
+("According to WHO's healthy diet fact sheet, ..."), built in code from the registry's
+`cite_as`. Every sentence is still one claim from one document, as the validator
+enforces, so sources are never blended (brief #5); only the layout changed.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from guidance_rag.models import Answer, AnswerStatus, Chunk, Citation, Claim, DocAnswer
+from guidance_rag.models import Answer, AnswerStatus, Chunk, Citation, Claim, DocAnswer, Sentence
 
-CLOSING_LINE = "These are separate recommendations from different authorities."
+# First words that keep their capital after a lead-in: names, acronyms, codes.
+_KEEP_CAPITAL = re.compile(r"^(India\w*|I|[A-Z]{2,}\S*|\S*\d\S*|\S+[A-Z]\S*)$")
 
 
 def citation_for(n: int, chunk: Chunk) -> Citation:
@@ -39,6 +46,23 @@ def order_sections(sections: Sequence[DocAnswer], doc_order: Sequence[str]) -> l
     return [DocAnswer(doc_id=d, claims=merged[d]) for d in ordered]
 
 
+def lead_in(source: str, text: str) -> str:
+    """ "According to <source>, <text>", lowering the claim's first letter unless the
+    word is a name, acronym or code."""
+    first, _, rest = text.partition(" ")
+    if first and not _KEEP_CAPITAL.match(first.rstrip(",.;:")):
+        first = first[0].lower() + first[1:]
+    return f"According to {source}, {first}{' ' + rest if rest else ''}"
+
+
+def with_marks(text: str, marks: str) -> str:
+    """Citation marks before the sentence's final stop: "... frying again [1]."."""
+    text = text.rstrip()
+    if text.endswith((".", "!", "?")):
+        return f"{text[:-1]} {marks}{text[-1]}"
+    return f"{text} {marks}."
+
+
 def render_answer(
     sections: Sequence[DocAnswer],
     chunks: Mapping[str, Chunk],
@@ -47,8 +71,10 @@ def render_answer(
     docs_searched: Sequence[str] = (),
     status: AnswerStatus = AnswerStatus.ANSWERED,
     not_covered: str | None = None,
+    cite_as: Mapping[str, str] | None = None,
 ) -> Answer:
-    """The final answer: sections, numbered citations and Markdown."""
+    """The final answer: sections, sentences in reading order, numbered citations and
+    Markdown. `cite_as` names each document in its lead-in (default: its title)."""
     sections = order_sections(sections, doc_order)
     numbers: dict[str, int] = {}
     citations: list[Citation] = []
@@ -59,16 +85,21 @@ def render_answer(
                     numbers[chunk_id] = len(numbers) + 1
                     citations.append(citation_for(numbers[chunk_id], chunks[chunk_id]))
 
-    lines: list[str] = []
+    sentences: list[Sentence] = []
     for section in sections:
         first = chunks[section.claims[0].chunk_ids[0]]
-        lines.append(f"**{first.doc_title} — {first.publisher} ({first.year})**")
-        for claim in section.claims:
-            marks = "".join(f"[{numbers[c]}]" for c in claim.chunk_ids)
-            lines.append(f"- {claim.text} {marks}")
-        lines.append("")
-    if len(sections) > 1:
-        lines += [CLOSING_LINE, ""]
+        source = (cite_as or {}).get(section.doc_id) or first.doc_title
+        for i, claim in enumerate(section.claims):
+            text = lead_in(source, claim.text) if i == 0 else claim.text
+            cited = [numbers[c] for c in claim.chunk_ids]
+            sentences.append(Sentence(text=text, doc_id=section.doc_id, citations=cited))
+
+    lines: list[str] = []
+    if sentences:
+        paragraph = " ".join(
+            with_marks(s.text, "".join(f"[{n}]" for n in s.citations)) for s in sentences
+        )
+        lines += [paragraph, ""]
     if not_covered:
         lines += [f"_Not covered by these documents: {not_covered}_", ""]
     lines.append("---")
@@ -81,6 +112,7 @@ def render_answer(
     return Answer(
         status=status,
         sections=list(sections),
+        sentences=sentences,
         citations=citations,
         docs_searched=list(docs_searched),
         not_covered=not_covered,
@@ -111,6 +143,8 @@ def api_response(answer: Answer) -> dict[str, Any]:
     return {
         "status": answer.status.value,
         "refusal": answer.refusal.model_dump(mode="json") if answer.refusal else None,
+        # The answer as one paragraph: sentences in reading order, each from one document.
+        "answer": [s.model_dump(mode="json") for s in answer.sentences],
         "sections": sections,
         "citations": [
             {
