@@ -1,0 +1,25 @@
+{
+  "questions": 48,
+  "passed": 47,
+  "recall_at_10": 1.0,
+  "recall_n": 29,
+  "oos_recall": 1.0,
+  "nic_recall": 1.0,
+  "false_refusal": 0.034482758620689655,
+  "near_miss_false_refusal": 0.16666666666666666,
+  "errors": 0,
+  "claims": 106,
+  "blend_rate": 0.0,
+  "uncited_claims": 0,
+  "judged": 106,
+  "citation_precision": 0.9811320754716981,
+  "verdicts": {
+    "supported": 104,
+    "partial": 2
+  },
+  "live": 0,
+  "p50_latency_s": null,
+  "p95_latency_s": null,
+  "p50_latency_all_s": 1.3477579790051095,
+  "p95_latency_all_s": 27.880570400005674
+}

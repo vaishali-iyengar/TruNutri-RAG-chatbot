@@ -1,0 +1,37 @@
+# The chat stack (implementation-plan.md, 8.5):
+#
+#   cp .env.example .env        # and set GROQ_API_KEY
+#   docker compose up -d --build
+#   make docker-ingest          # fetch -> parse -> chunk -> index, inside the api container
+#   open http://localhost:8000
+#
+# The api container loads the index once it exists; no restart needed after the first
+# ingest. Restart it (docker compose restart api) after re-indexing a changed corpus.
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+    ports:
+      - "8000:8000"
+    volumes:
+      # Shared with the host: downloads, parsed trees, chunks and the registry's
+      # retrieval dates; the embedding and LLM caches; trace logs.
+      - ./corpus:/app/corpus
+      - ./.cache:/app/.cache
+      - ./logs:/app/logs
+      - hf-cache:/cache/huggingface
+    depends_on:
+      - qdrant
+
+volumes:
+  qdrant-data:
+  hf-cache:

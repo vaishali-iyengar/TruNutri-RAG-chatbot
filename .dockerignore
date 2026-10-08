@@ -1,0 +1,14 @@
+.git
+.venv
+.cache
+.index
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/__pycache__
+logs
+corpus/raw/*
+!corpus/raw/.gitkeep
+.env
+.DS_Store
+embeddings.json

@@ -1,0 +1,292 @@
+# Corpus registry — source documents and their provenance (ARCHITECTURE.md §3).
+#
+# Edit by hand to add or change documents. `retrieval_date` and `sha256` are
+# written by the fetcher (`python -m guidance_rag.ingest fetch`), which rewrites
+# this file, so put explanations in `notes` rather than in YAML comments.
+
+documents:
+- doc_id: icmr-nin-dgi-2024
+  title: Dietary Guidelines for Indians
+  short_name: ICMR-NIN DGI 2024
+  publisher: ICMR – National Institute of Nutrition
+  year: 2024
+  source_url: https://nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf
+  format: pdf
+  domain: nutrition
+  status: included
+  aliases:
+  - ICMR
+  - NIN
+  - ICMR-NIN
+  - DGI
+  - DGI 2024
+  - Dietary Guidelines for Indians
+  - Indian dietary guidelines
+  - Indian guidelines
+  title_text: Dietary Guidelines for Indians
+  retrieval_method: direct
+  notes: Revised Edition 2024 (earlier editions 1998 and 2011). The source URL serves the PDF directly
+    despite the pdfjs path. Pages 7, 11, 13 and 17 are blank (no text layer); nothing to OCR.
+  parser:
+    skip_pages: [1-13, 17, 34, 56-58, 82, 120-121, 136-141, 147-148]
+    headings:
+    - {level: 1, min_size: 30, bold: true}
+    - {level: 1, min_size: 24.5, max_size: 25.5, bold: true}
+    - {level: 1, min_size: 14, bold: false, pattern: '^ANNEXURE\b'}
+    - {level: 2, min_size: 12, bold: true, pattern: '^[A-Z]'}
+    heading_exclude_regex: '^(Fig(ure)?|Table)\b'
+    recommendation_regex: '^(RATIONALE|POINTS TO REGISTER)\b'
+    max_body_font_size: 14.5
+    drop_pull_quotes: true
+    drop_tables: [p33-t1, p36-t1, p47-t1, p84-t1, p101-t1]
+    notes: 'Skipped: cover, committee, contents, message and foreword (1-13); blank page 17; personalised
+      meal-plan charts with calorie and body-weight targets (34, 56-58, 82, 120-121, 136-141), which are out
+      of scope for this assistant; back matter (147-148). Two columns; pull quotes repeat the body text and
+      are dropped. Each guideline''s RATIONALE and POINTS TO REGISTER boxes are recommendation blocks. Tables dropped because they are not real tables: p33-t1 (food-group infographic), p36-t1 (two-column iron/folate text box, read as interleaved text), p47-t1 (weekly infant menu with one cell copied across every row), p84-t1 and p101-t1 (figure frames).'
+  retrieval_date: '2026-10-04'
+  sha256: fc4bb5b1ee92a4d3d5dfe5d88eba15be6a50c096b709ce55d2bd4af1a1b91658
+- doc_id: who-healthy-diet
+  title: Healthy diet (fact sheet)
+  short_name: WHO Healthy diet
+  publisher: World Health Organization
+  year: 2026
+  source_url: https://www.who.int/news-room/fact-sheets/detail/healthy-diet
+  format: html
+  domain: nutrition
+  status: included
+  aliases:
+  - WHO
+  - World Health Organization
+  - WHO healthy diet
+  - WHO fact sheet
+  - healthy diet fact sheet
+  title_text: Healthy diet
+  retrieval_method: direct
+  notes: Year is the fact sheet's date on the page (26 January 2026).
+  parser:
+    content_selector: article.sf-detail-body-wrapper
+  retrieval_date: '2026-10-04'
+  sha256: 4bb0a876ec0f7e60e47e9996293c9d23149868f41fa1fad2e9f42df17d47a7fd
+- doc_id: foodsafety-cold-storage
+  title: Cold Food Storage Chart
+  short_name: FoodSafety.gov cold storage chart
+  publisher: FoodSafety.gov (U.S. Department of Health and Human Services)
+  year: 2023
+  source_url: https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts
+  format: html
+  domain: food_safety
+  status: included
+  aliases:
+  - FoodSafety.gov
+  - foodsafety.gov
+  - cold food storage chart
+  - cold storage chart
+  - fridge chart
+  - USDA fridge chart
+  title_text: Cold Food Storage Chart
+  retrieval_method: archive
+  fetch_url: https://web.archive.org/web/20261001000920id_/https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts
+  notes: foodsafety.gov blocks scripted downloads (HTTP 403 from its CDN), so the page is fetched from
+    the Internet Archive snapshot of 2026-10-01 (the `id_` URL returns the original HTML). Year is the
+    page's article:modified_time (2023-09-19).
+  parser:
+    content_selector: article.node--type-article
+    drop_selectors: ['.field--name-field-date-last-reviewed']
+  retrieval_date: '2026-10-04'
+  sha256: 2502a49f1838d1445882cd7a1417d0664f1cd30f772e87543ac53560f18353ee
+- doc_id: fssai-fsms-milk
+  title: 'Food Industry Guide to Implement GMP/GHP Requirements: Milk and Milk Products (Guidance Document,
+    Food Safety Management System)'
+  short_name: FSSAI FSMS Milk
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  year: 2018
+  source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Milk_14_03_2019.pdf
+  format: pdf
+  domain: food_safety
+  status: included
+  aliases:
+  - FSSAI milk
+  - FSSAI dairy
+  - FSSAI milk guidance
+  - milk guidance
+  - dairy guidance
+  title_text: Milk and Milk Products
+  retrieval_method: direct
+  notes: The document states 'First Edition February 2018'; the file name and PDF date (March 2019) are
+    the upload. Pages 74-75 (part of the self-audit checklist) are images with no text layer and need
+    OCR in Phase 2; they include facts such as chilling milk to 4 °C or lower.
+  parser:
+    skip_pages: [1-3, 5-8, 76-87]
+    headings_only_pages: [61, 67]
+    headings:
+    - {level: 1, min_size: 14, max_size: 24, bold: true, pattern: '^[A-H]\.\s'}
+    - {level: 1, min_size: 11, max_size: 14, bold: true, pattern: '^ANNEXURE \d'}
+    - {level: 2, min_size: 13, bold: true}
+    - {level: 3, min_size: 11, max_size: 12, bold: true, pattern: '^\d+(\.\d+)*\.?\s+[A-Za-z]', nest_by_number: true}
+    heading_exclude_regex: '^(Fig(ure)?|Table)\b'
+    drop_tables: [p94-t1]
+    notes: 'Skipped: cover, title, preface, contributors, contents and glossary (1-3, 5-8); blank record templates
+      (76-87). Process flowcharts (61, 67) keep only their headings. The self-audit checklist on 74-75 is
+      scanned and OCR''d. Tables p20-t1 and p29-t1 are hand-corrected in corpus/overrides/. Table p94-t1 is a flowchart drawn as boxes, so it is dropped.'
+  retrieval_date: '2026-10-04'
+  sha256: b66281efef2e2c3464e8e6dfe9cc02b2889feddb77771c7924228bf24d01116d
+- doc_id: fssai-fsms-poultry
+  title: 'Food Industry Guide to Implement GMP/GHP Requirements: Meat and Meat Products (Poultry) (Guidance
+    Document, Food Safety Management System)'
+  short_name: FSSAI FSMS Poultry
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  year: 2018
+  source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Poultry_06_01_2020.pdf
+  format: pdf
+  domain: food_safety
+  status: included
+  aliases:
+  - FSSAI poultry
+  - FSSAI poultry guidance
+  - poultry guidance
+  title_text: Meat and Meat Products
+  retrieval_method: direct
+  notes: The document states 'First Edition February 2018'; the file name (06-01-2020) and PDF date are
+    the upload, and the PDF metadata title is 'Draft'. Text layer on every page.
+  parser:
+    skip_pages: [1-4, 6-10, 72-88]
+    headings_only_pages: [14, 62]
+    headings:
+    - {level: 1, min_size: 9.5, max_size: 14, bold: true, pattern: '^ANNEXURE\b'}
+    - {level: 1, min_size: 20, max_size: 28, bold: true}
+    - {level: 1, min_size: 16, bold: true}
+    - {level: 2, min_size: 14, bold: true}
+    - {level: 3, min_size: 12, bold: true, pattern: '^\d+(\.\d+)*\.?\s*[A-Za-z]', nest_by_number: true}
+    - {level: 6, min_size: 12, bold: true, pattern: '^[A-Z][^.]{2,60}$'}
+    heading_exclude_regex: '^(FIGURE|Fig|Table)\b'
+    drop_tables: [p30-t1]
+    notes: 'Skipped: cover, title, preface, experts, contents and lists of abbreviations/figures/templates
+      (1-4, 6-10); blank record templates (72-88). Process flowcharts (14, 62) keep only their headings. Table p30-t1 is a figure frame, so it is dropped.'
+  retrieval_date: '2026-10-04'
+  sha256: 05d5f541ea90d0a6ecfdcab1ddf1b0dd4f60a77b0665002aa301d4fdbf6525fb
+- doc_id: fssai-fsms-fruits-vegetables
+  title: 'Food Industry Guide to Implement GMP/GHP Requirements: Processed Fruits and Vegetables (Guidance
+    Document, Food Safety Management System)'
+  short_name: FSSAI FSMS Fruits & Vegetables
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  year: 2019
+  source_url: https://www.fssai.gov.in/docs/business/guidance/FSMS_Guidance_Document_FruitsVegetable_15_03_2019.pdf
+  format: pdf
+  domain: food_safety
+  status: included
+  aliases:
+  - FSSAI fruits and vegetables
+  - FSSAI produce
+  - FSSAI fruit and vegetable guidance
+  - fruits and vegetables guidance
+  title_text: Fruits and Vegetables
+  retrieval_method: direct
+  notes: The document states 'First Edition March 2019'. Pages 68 and 72 are HACCP flow diagrams stored
+    as images (no text layer); page 126 is blank. The diagrams are generic HACCP steps, so OCR is optional.
+  parser:
+    skip_pages: [1-5, 68, 72, 104-120, 124-126]
+    headings_only_pages: [75, 81, 88-91, 97, 100]
+    headings:
+    - {level: 1, min_size: 18, max_size: 30}
+    - {level: 2, min_size: 16, bold: true, pattern: '^[IVX]+\.'}
+    - {level: 1, min_size: 16, bold: true}
+    - {level: 4, min_size: 12, max_size: 14.3, bold: true, pattern: '^[A-E]\.\s'}
+    - {level: 1, min_size: 12, max_size: 14.3, bold: true, pattern: '^Annexure \d'}
+    - {level: 3, min_size: 14, max_size: 14.3, bold: true}
+    - {level: 3, min_size: 12, bold: true, pattern: '^\d+(\.\d+)*\.?\s*[A-Za-z]', nest_by_number: true}
+    - {level: 6, min_size: 12, bold: true, pattern: '^[A-Z][^.]{2,60}$'}
+    heading_exclude_regex: '^(Fig(ure)?|Table)\b'
+    notes: 'Skipped: cover, title, preface and contents (1-5); HACCP diagram images (68, 72); blank record
+      templates (104-120); references and a blank page (124-126). Section divider pages use large regular
+      (not bold) type. Process flowcharts keep only their headings.'
+  retrieval_date: '2026-10-04'
+  sha256: 88e4b01190622a74739820f7293e0215b95add528a351b1c9414b84538db50a6
+- doc_id: jecfa-trs-1058
+  title: 'Evaluation of certain food additives: one-hundredth report of the Joint FAO/WHO Expert Committee
+    on Food Additives (WHO Technical Report Series 1058)'
+  short_name: JECFA TRS 1058
+  publisher: World Health Organization and Food and Agriculture Organization of the United Nations
+  year: 2025
+  source_url: https://www.who.int/publications/i/item/9789240116030
+  format: pdf
+  domain: additives
+  status: included
+  aliases:
+  - JECFA
+  - Joint FAO/WHO Expert Committee on Food Additives
+  - JECFA report
+  - TRS 1058
+  - 100th JECFA report
+  title_text: Evaluation of certain food additives
+  retrieval_method: direct
+  fetch_url: https://iris.who.int/server/api/core/bitstreams/e31f56ec-00c5-4f92-94e4-37fd0fb84471/content
+  notes: Chosen as the most recent JECFA report on food additives (published 25 November 2025; PDF dated
+    September 2025; 95 pages; ISBN 978-92-4-011603-0). source_url is the WHO publication page that citations
+    link to; fetch_url is the PDF on WHO IRIS. Text layer on every page.
+  parser:
+    skip_pages: [1-10, 84-95]
+    heading_source: toc
+    table_strategy: none
+    notes: 'Headings come from the PDF bookmarks. Skipped: cover, contents and abbreviations (1-10); the lists
+      of earlier reports, the agenda and the Annex 3 summary table, which repeats sections 3.1-3.2 (84-93);
+      back matter (94-95). Its tables have no ruling lines and are not detected, so their text stays as lines.'
+  retrieval_date: '2026-10-04'
+  sha256: c9e22161eed664a3b8a8017e086c18a78b6d7e3566902facc83ad21b3f3b703f
+- doc_id: fssai-fsms-spices
+  title: Guidance Document — Food Safety Management System, Spices
+  short_name: FSSAI FSMS Spices
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Spices_23_10_2018.pdf
+  format: pdf
+  domain: food_safety
+  status: reserve
+  exclusion_reason: Keeps the corpus at 7 documents; swap-in candidate.
+  aliases: []
+  retrieval_method: direct
+- doc_id: fssai-fsms-fish
+  title: Guidance Document — Food Safety Management System, Fish and Fish Products
+  short_name: FSSAI FSMS Fish
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  source_url: https://www.fssai.gov.in/docs/business/guidance/Guidance_Document_Fish_01_06_2018.pdf
+  format: pdf
+  domain: food_safety
+  status: reserve
+  exclusion_reason: Keeps the corpus at 7 documents; swap-in candidate.
+  aliases: []
+  retrieval_method: direct
+- doc_id: fssai-product-standards
+  title: Food Product Standards
+  short_name: FSSAI Product Standards
+  publisher: Food Safety and Standards Authority of India (FSSAI)
+  source_url: https://fssai.gov.in/standards/product-standards
+  format: html
+  domain: food_safety
+  status: reserve
+  exclusion_reason: An index page linking to long legal regulation PDFs. Add later if the scope grows
+    to product standards.
+  aliases: []
+  retrieval_method: direct
+- doc_id: efsa-food-composition
+  title: Food composition data
+  short_name: EFSA Food Composition
+  publisher: European Food Safety Authority (EFSA)
+  source_url: https://www.efsa.europa.eu/en/microstrategy/food-composition-data-2026
+  format: html
+  domain: nutrition
+  status: excluded
+  exclusion_reason: An interactive data dashboard of nutrient values, not written guidance. The brief
+    puts nutrient numbers for individual foods in the Milestone 3 database.
+  aliases: []
+  retrieval_method: direct
+- doc_id: health-canada-cnf
+  title: Nutrient Value of Some Common Foods (Canadian Nutrient File)
+  short_name: Canadian Nutrient File
+  publisher: Health Canada
+  source_url: https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/nutrient-data/nutrient-value-some-common-foods-2008.html
+  format: html
+  domain: nutrition
+  status: excluded
+  exclusion_reason: Tables of nutrient values per food, not written guidance. The brief puts nutrient
+    numbers for individual foods in the Milestone 3 database.
+  aliases: []
+  retrieval_method: direct

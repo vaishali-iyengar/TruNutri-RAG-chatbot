@@ -1,0 +1,75 @@
+# Full eval on the golden set (implementation-plan.md, 9.6). Runs nightly and by hand
+# (Actions tab -> Eval -> Run workflow). Fails when a Phase 9 target is missed
+# (`run_eval --check`).
+#
+# Needs the repository secret GROQ_API_KEY. LLM replies are cached in .cache/llm/ and the
+# cache is carried from run to run, so an unchanged pipeline re-runs from the cache:
+# repeatable, and without spending the Groq quota. The index is rebuilt from the
+# committed chunks (corpus/chunks/); embeddings and the Hugging Face models are cached too.
+
+name: Eval
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"  # 02:30 UTC daily
+
+concurrency:
+  group: eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --extra embed
+
+      - name: Restore caches (LLM replies, embeddings, models)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/llm
+            .cache/embeddings
+            ~/.cache/huggingface
+          key: eval-cache-${{ github.run_id }}
+          restore-keys: eval-cache-
+
+      - name: Build the index
+        run: uv run python -m guidance_rag.ingest index
+
+      - name: Run the eval
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: >-
+          uv run python -m eval.run_eval --split all --judge --check
+          --out eval-report.md --json eval-metrics.json
+
+      - name: Save caches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/llm
+            .cache/embeddings
+            ~/.cache/huggingface
+          key: eval-cache-${{ github.run_id }}
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            eval-report.md
+            eval-metrics.json
+            logs/eval_traces.jsonl
+          if-no-files-found: ignore

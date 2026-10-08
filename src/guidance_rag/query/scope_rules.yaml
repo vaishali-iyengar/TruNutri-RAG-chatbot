@@ -1,0 +1,491 @@
+# Scope guard rules (implementation-plan.md, 5.3; ARCHITECTURE.md §7.2).
+#
+# The guard refuses a question when a rule fires: its `pattern` matches the normalised
+# question (lowercase, NFKC, misspellings fixed; see scope_guard.normalise) and every
+# pattern in `requires` matches too. Rules are tried in file order, so a question that
+# is both medical and a calorie question gets the medical refusal.
+#
+# `{name}` in a pattern is replaced by the `terms` entry of that name, as a
+# non-capturing alternation. Each term is a regex fragment.
+#
+# Principle: refuse advice about a person (their condition, medication, calorie target,
+# weight) and nutrient values of a single food. Allow what the guidance says about
+# populations ("What does WHO say about salt and blood pressure?").
+#
+# Tests: tests/data/scope_cases.yaml. Add a case there before changing a rule.
+
+terms:
+  # Someone asking about themselves (or a named person they ask on behalf of).
+  personal:
+    - i
+    - i'm
+    - im
+    - i've
+    - ive
+    - i'd
+    - me
+    - my
+    - mine
+    - myself
+  # Words that say who has a condition.
+  has_condition:
+    - i have
+    - i've got
+    - i've
+    - ive
+    - i got
+    - i am
+    - i'm
+    - im
+    - i suffer
+    - i was diagnosed
+    - i get
+    - i feel
+    - i keep
+    - i've been feeling
+    - my
+    - she has
+    - he has
+    # Hinglish and Spanish (9.4 red team)
+    - mujhe
+    - muje
+    - meri
+    - mera
+    - mere
+    - tengo
+    - padezco
+    - sufro de
+    - she's
+    - he's
+    - she is
+    - he is
+    - they have
+  # Health conditions and symptoms.
+  condition:
+    - diabet\w*
+    - pre-?diabet\w*
+    - hypertension
+    - (high |low )?blood pressure
+    - bp
+    - cholesterol
+    - blood sugar
+    - (blood )?sugar levels?
+    - high (blood )?sugar
+    - glucose levels?
+    - ibs
+    - irritable bowel
+    - crohn'?s
+    - co?eliac
+    - pcos
+    - pcod
+    - (hypo|hyper)?thyroid\w*
+    - gastritis
+    - colitis
+    - diverticulitis
+    - pancreatitis
+    - hepatitis
+    - gallstones?
+    - osteoporosis
+    - hiv
+    - (weak|weakened|low|compromised|poor) immun\w*( system)?
+    - immuno-?compromised
+    # Hinglish and Spanish (9.4 red team)
+    - sugar (ki )?(bimari|problem)
+    - bimari
+    - madhumeh
+    - colesterol
+    - hipertensi[oó]n
+    - presi[oó]n (alta|arterial)
+    - kidney (disease|stones?|problems?|failure)
+    - ckd
+    - gout
+    - cancer
+    - tumou?rs?
+    - heart (disease|problems?|condition|attack)
+    - fatty liver
+    - liver (disease|problems?)
+    - ana?e?mi(a|c)  # anaemia, anemia, anemic
+    - allerg(y|ies|ic)
+    - intoleran(ce|t)
+    - acid reflux
+    - gerd
+    - ulcers?
+    - migraines?
+    - arthritis
+    - asthma
+    - eczema
+    - psoriasis
+    - constipat\w*
+    - diarrh?o?ea
+    - vomit\w*
+    - nausea
+    - stomach (pain|ache|cramps?|upset|bug)
+    - bloat\w*
+    - fever
+    - infection
+    - food poisoning
+    - gestational
+    - symptoms?
+    - (heart|kidney|liver|cancer|diabetic|bp|thyroid|cardiac|renal) patients?
+    - chemo\w*
+    - radiotherapy
+    - dialysis
+    - surgery
+    - triglycerides?
+    - uric acid
+    - (joint|back|knee|chest|stomach|muscle|tooth|neck|leg) ?(pain|aches?)
+    - headaches?
+    - heartburn
+    - indigestion
+    - acidity
+    - colic
+    - (a|the|common) cold  # not "cold enough"
+    - flu
+    - cough
+    - sore throat
+    - piles
+    - ha?emorrhoids
+    - uti
+    - jaundice
+    - typhoid
+    - dengue
+    - covid
+  treat_verb:
+    - cure[sd]?
+    - curing
+    - treat
+    - treats
+    - treating
+    - heal
+    - heals
+    - healing
+    - reverse
+    - reverses
+    - reversing
+  manage_verb:
+    - manage
+    - managing
+    - control
+    - controlling
+    - lower
+    - lowering
+    - reduce
+    - reducing
+    - bring down
+    - get rid of
+    - fix
+    - improve
+    - help with
+    - good for
+    - bad for
+    - safe for
+    - make it worse
+  medication:
+    - medications?
+    - medicines?
+    - meds
+    - pills?
+    - tablets?
+    - capsules?
+    - insulin
+    - blood thinners?
+    - warfarin
+    - anticoagulants?
+    - metformin
+    - statins?
+    - antibiotics?
+    - prescriptions?
+    - doses?
+    - dosage
+  asks_for_self:
+    - should i
+    - can i
+    - do i
+    - shall i
+    - must i
+    - my
+    - for me
+    - i take
+    - i'm taking
+    - i am taking
+    - while taking
+  calorie_word:
+    - calori\w*
+    - calor[ií]as?  # Spanish
+    - kcals?
+    - cals?
+  weight_unit:
+    - kg
+    - kgs
+    - kilos?
+    - kilograms?
+    - lbs?
+    - pounds?
+  speed:
+    - fast
+    - quick\w*
+    - in (a|one|two|three|four|\d+) (days?|weeks?|months?)
+    - by (skipping|fasting|not eating)
+  nutrient:
+    - protein
+    - calori\w*
+    - kcals?
+    - fats?
+    - carbs?
+    - carbohydrates?
+    - sugars?
+    - fib(re|er)
+    - iron
+    - calcium
+    - sodium
+    - potassium
+    - zinc
+    - magnesium
+    - vitamin [a-z0-9]+
+    - vitamins
+    - cholesterol
+    - macros
+    - nutrients
+  # "… is in a banana", "… does spinach have", "… in 1 cup of oats"
+  single_food:
+    - (is|are) (there )?in
+    - (does|do) [\w' -]{1,30} (have|contain|give)
+    - in (one|an?|\d+\s*(g|gm|grams?|ml|cups?|pieces?|slices?|tbsp|tsp|spoons?|bowls?))
+    - in 100
+
+rules:
+  # --- MEDICAL -----------------------------------------------------------------------
+  - id: medical.diagnose
+    category: medical
+    pattern: '\b(diagnos\w*|do i have|could i have|might i have|am i (sick|ill|allergic|intolerant|diabetic)|what\W*s wrong with (me|my)|what is wrong with (me|my))\b'
+    note: Diagnosis is always medical.
+
+  - id: medical.my_clinician
+    category: medical
+    pattern: '\b(my|her|his) (doctor|physician|gp|dietitian|dietician|nutritionist|cardiologist|endocrinologist|p(a)?ediatrician|gynae?cologist)\b'
+    note: '"My doctor says my triglycerides are high." A person''s own care.'
+
+  - id: medical.own_pregnancy
+    category: medical
+    pattern: '\b(pregnan\w*|expecting a baby|breast-?feed\w*|nursing (mother|my baby)|lactating|trimester|gestation\w*)\b'
+    requires: ['\b({personal}|she''s|she is|we''re|we are)\b']
+    note: 'A person''s own pregnancy or breastfeeding is referred to a professional (decided 2026-10-06). Population guidance stays in scope: "Which foods should pregnant women avoid according to ICMR?"'
+
+  - id: medical.treat_condition
+    category: medical
+    pattern: '\b{treat_verb}\b'
+    requires: ['\b{condition}\b']
+    note: '"Can turmeric cure cancer?" Not "heat treatment" or "treated water": no condition.'
+
+  - id: medical.own_condition
+    category: medical
+    pattern: '\b{has_condition}\b'
+    requires: ['\b{condition}\b']
+    note: 'Someone''s own condition or symptom: "I''m diabetic", "my dad has gout", "I''ve been vomiting".'
+
+  - id: medical.manage_own_condition
+    category: medical
+    pattern: '\b{manage_verb}\b'
+    requires: ['\b{personal}\b', '\b{condition}\b']
+    note: '"Foods to lower my blood sugar". Without "my", "what foods lower blood pressure" is population guidance.'
+
+  - id: medical.diet_for_condition_named
+    category: medical
+    pattern: '\b(diet|foods?(?! (handlers?|business\w*|workers?|staff|operators?|safety))|eat|eating|meals?|drinks?|fruits?|breakfast)\b.{0,25}\b(for|against|with|during|to (manage|control|beat|fight))\s+(my |a |an |the )?{condition}'
+    note: '"Which diet is best for kidney stones?" Not "diet and preventing diabetes" or "food handlers with diarrhoea".'
+
+  - id: medical.safe_with_condition
+    category: medical
+    pattern: '\b(is it|is that|are they|it is|it''s) (safe|ok|okay|good|bad|fine|harmful)\b'
+    requires: ['\b(during|with|while|on|after|if)\s+(i |my |a |an )?(have |am |\w+ )?{condition}']
+    note: '"Is it safe to fast during chemo?"'
+
+  - id: medical.medication
+    category: medical
+    pattern: '\b{medication}\b'
+    requires: ['\b{asks_for_self}\b']
+    note: '"Can I eat sweets while taking metformin?" Not "veterinary drug residues".'
+
+  - id: medical.on_medication
+    category: medical
+    pattern: '\b(on|taking|take|took|start|started|stop|stopped|while on)\s+(my |the |these |this )?{medication}\b(?!\s+residues?)'
+    note: '"Is it okay to drink alcohol on antibiotics?" Not "limits on antibiotic residues".'
+
+  - id: medical.supplement_for_self
+    category: medical
+    pattern: '\bsupplements?\b'
+    requires: ['\b(should i|can i|do i need|for me|my)\b']
+
+  - id: medical.diet_for_condition
+    category: medical
+    pattern: '\b(diabetics|patients?|(people|someone|those|anyone|a person) (with|who (has|have|is|are)))\b'
+    requires: ['\b(eat|eats|diet|foods?|meals?|avoid|drink)\b', '\b{condition}\b']
+    note: '"What should people with high blood pressure eat?" is a therapeutic diet, not population guidance.'
+
+  - id: medical.hindi_own_condition
+    category: medical
+    # No \b: Python's \b fails next to Devanagari vowel signs, which aren't \w.
+    pattern: '(मुझे|मुझको|मेरी|मेरा|मेरे).{0,40}(बीपी|ब्लड प्रेशर|डायबिटीज|डायबिटीस|शुगर|मधुमेह|बीमारी|कैंसर|थायराइड|कोलेस्ट्रॉल)'
+    note: '"मुझे हाई बीपी है, मुझे क्या खाना चाहिए?" (I have high BP; what should I eat?). Added in 9.4.'
+
+  # --- CALORIE_TARGET ------------------------------------------------------------------
+  - id: calorie.how_many_for_someone
+    category: calorie_target
+    pattern: '\bhow many {calorie_word}\b'
+    requires: ['\b(i|me|my|should|need|needs|to (lose|gain|maintain|burn|eat|bulk|cut|build|get)|bulk(ing)?|per day|a day|daily|each day|every day)\b']
+    note: '"How many calories should I eat?" Not "how many calories are in a banana" (a nutrient lookup).'
+
+  - id: calorie.how_many_es
+    category: calorie_target
+    pattern: '\bcu[aá]nt[ao]s {calorie_word}\b'
+    requires: ['\b(debo|deber[ií]a|necesito|tengo que|bajar|perder|subir|ganar|al d[ií]a|diari\w*)\b']
+    note: '"¿Cuántas calorías debo comer al día?" Added in 9.4.'
+
+  - id: calorie.target
+    category: calorie_target
+    pattern: '\bcalori\w* (target|goal|deficit|surplus|budget|allowance)\b'
+
+  - id: calorie.energy_needs
+    category: calorie_target
+    pattern: '\b(tdee|bmr|basal metabolic rate|maintenance calori\w*|total daily energy expenditure)\b'
+    requires: ['\b{personal}\b|\bcalculat\w*|\bwhat\W*s\b|\bwhat is\b']
+    note: '"What''s my TDEE?"'
+
+  - id: calorie.personal
+    category: calorie_target
+    pattern: '\b{calorie_word}\b'
+    requires: ['\b{personal}\b']
+    note: '"What should my daily calorie intake be?" Not "calories from added sugar".'
+
+  - id: calorie.numbered_plan
+    category: calorie_target
+    pattern: '\b\d[\d,]{2,}\s*-?\s*{calorie_word}\b'
+    requires: ['\b(diet|meal|meals|plan|chart|menu|eat|day|daily|right|enough|ok|okay|too (much|little)|for (a|an|me|my))\b']
+    note: '"A 1500 kcal meal plan".'
+
+  # --- BODY_WEIGHT ---------------------------------------------------------------------
+  - id: weight.how_much_to_weigh
+    category: body_weight
+    pattern: '\bhow much (should|does|do|must|can|would) .{0,40}\bweigh\b'
+
+  - id: weight.should_weigh
+    category: body_weight
+    pattern: '\b(what should|should (i|she|he|we|you)|how heavy should)\b.{0,40}\bweigh\b'
+    note: '"What should I weigh at 160 cm?"'
+
+  - id: weight.my_weight
+    category: body_weight
+    pattern: '\b(my|her|his) (current )?(weight|height|bmi|waist( size)?)\b'
+    requires: ['\b(healthy|normal|ok|okay|fine|too|over|under|ideal|right|good|enough|bad|high|low)\b']
+    note: '"Is my weight healthy for my height?"'
+
+  - id: weight.for_a_person
+    category: body_weight
+    pattern: '\b(healthy|normal|ideal|right|average|good) (body )?weight (for|of) (a|an|my|me|someone|her|him)\b'
+    note: '"What''s a normal weight for a 12 year old boy?"'
+
+  - id: weight.for_my_height
+    category: body_weight
+    pattern: '\b(weight|weigh|obese|overweight|underweight|bmi)\b'
+    requires: ['\b(for|at) (my|her|his) (height|age)\b']
+    note: '"What weight is considered obese for my height?"'
+
+  - id: weight.ideal
+    category: body_weight
+    pattern: '\b(ideal|target|goal) (body )?weight\b'
+
+  - id: weight.healthy_for_someone
+    category: body_weight
+    pattern: '\b(healthy|normal|right|good|correct) (body )?weight\b'
+    requires: ['\b{personal}\b|\b\d+(\.\d+)?\s*{weight_unit}\b']
+    note: 'Not "maintaining a healthy weight" in general.'
+
+  - id: weight.bmi
+    category: body_weight
+    pattern: '\bbmi\b'
+    requires: ['\b{personal}\b|\bcalculat\w*|\d']
+
+  - id: weight.change_amount
+    category: body_weight
+    pattern: '\b(lose|lost|losing|drop|shed|gain|put on)\s+\d+(\.\d+)?\s*{weight_unit}\b'
+
+  - id: weight.how_many_units
+    category: body_weight
+    pattern: '\bhow many {weight_unit}\b'
+    requires: ['\b(lose|lost|losing|gain|gaining|drop|shed|put on|weigh)\b']
+    note: '"How many kilos should I lose?" Not "how many kg of ice per kg of poultry". Added in 9.4.'
+
+  - id: weight.hinglish
+    category: body_weight
+    pattern: '\b(weight|vajan|wajan|vazan|wazan) (kam|ghat\w*|badh\w*|kitna)\b|\bkitna (weight|vajan|wajan|vazan|wazan)\b'
+    note: '"Mujhe kitna weight kam karna chahiye?" Added in 9.4.'
+
+  - id: weight.how_much_weight
+    category: body_weight
+    pattern: '\bhow much weight\b'
+    requires: ['\b(lose|gain|i|she|he|my|can)\b']
+
+  - id: weight.am_i
+    category: body_weight
+    pattern: '\bam i (over ?weight|under ?weight|obese|fat|too (thin|heavy|fat))\b'
+
+  - id: weight.loss_for_someone
+    category: body_weight
+    pattern: '\b((lose|losing|lost|reduce|shed|drop|gain|put on) (weight|fat|belly fat|kilos)|weight loss|get rid of (belly )?fat|(drop|lose|go down) (a |one |two |three |\d+ )?(dress|jean|pant|clothing|clothes) sizes?|slim (down|up)|get (slim|thin|skinny)|trim down)\b'
+    requires: ['\b{personal}\b|\b(she|he|her|him)\b|\b{speed}\b|\bsizes?\b']
+    note: '"How fast can I lose weight?" Not "physical activity for weight management".'
+
+  # --- NUTRIENT_LOOKUP (routes to Milestone 3) -----------------------------------------
+  - id: nutrient.how_much_in_a_food
+    category: nutrient_lookup
+    pattern: '\bhow (much|many)( [\w-]+){0,3} {nutrient}\b'
+    requires: ['\b{single_food}\b']
+    note: '"How much protein is in paneer?" Not "how much salt is it OK to eat in a day".'
+
+  - id: nutrient.content
+    category: nutrient_lookup
+    pattern: '\b(nutritional value|nutrition(al)? (facts|info\w*|content|profile)|nutrient (content|profile|composition)|{nutrient} (content|count|value|level)s? (of|in)|calori(e|c) (content|count|value)|macros|macronutrients? (of|in|for))\b'
+
+  - id: nutrient.food_has
+    category: nutrient_lookup
+    pattern: '\b(does|do) (an? |the |one )?[\w-]+( [\w-]+)? (have|contain|has) (a lot of |lots of |much |many |any |more |less )?{nutrient}\b'
+    note: '"Does an avocado have a lot of fat?"'
+
+  - id: nutrient.amount_in
+    category: nutrient_lookup
+    pattern: '\b{nutrient} (are |is )?(in|of) (\d+|an?|one|two|three|half|a (cup|bowl|glass|slice|piece|plate|serving))\b'
+    note: '"What are the calories in 2 slices of bread?"'
+
+  - id: nutrient.is_there
+    category: nutrient_lookup
+    pattern: '\b(is|are) there (a lot of |lots of |much |many |any |more |less )?{nutrient} in\b'
+    note: '"Is there a lot of sugar in coconut water?"'
+
+  - id: nutrient.compare
+    category: nutrient_lookup
+    pattern: '\bwhich (one )?(has|have|contains?|is) (more|less|most|least|higher|lower|the most|the least) (in )?{nutrient}\b'
+    note: '"Which has more protein, chicken or paneer?"'
+
+  - id: nutrient.short_lookup
+    category: nutrient_lookup
+    pattern: '^\W*{nutrient} (in|of)\b'
+    note: '"Calories in a samosa?"'
+
+  - id: nutrient.list
+    category: nutrient_lookup
+    pattern: '\b(list|tell me|give me|show me)\b.{0,20}\b{nutrient}\b.{0,10}\b(in|of|for)\b'
+
+# Output guard (5.5): a drafted claim is removed when one of these fires. Only claims
+# addressed to the reader ("you") are removed; population figures stay.
+output_rules:
+  - id: output.calorie_target
+    category: calorie_target
+    pattern: '\b\d[\d,]*(\.\d+)?\s*-?\s*{calorie_word}\b'
+    requires: ['\byour?\b']
+  - id: output.weight_target
+    category: body_weight
+    pattern: '\b\d+(\.\d+)?\s*-?\s*{weight_unit}\b'
+    requires: ['\byour?\b']
+  - id: output.bmi
+    category: body_weight
+    pattern: '\byour bmi\b'
