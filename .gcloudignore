@@ -1,0 +1,7 @@
+# Files left out of `gcloud run deploy --source .` (uploaded to Cloud Build).
+# Everything git ignores (.env with the API key, .venv, caches, the local index, logs,
+# raw downloads) stays out, plus what the image doesn't need.
+#!include:.gitignore
+.git
+.gitignore
+stitch_ai_nutrition_assistant_ui/

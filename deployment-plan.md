@@ -30,7 +30,7 @@ Cloud Run service "trunutri"  (one container, built from ./Dockerfile)
 |---|---|---|
 | Platform | Google Cloud Run | Runs our existing Dockerfile; free monthly allowance; scales to zero when idle. Railway's free plan gives 0.5 GB RAM per service, too little for the models. |
 | Services | One | The page and API share one origin. No separate Qdrant: the local index needs a single process, which one container gives. |
-| Index and models | Baked into the image at build time | Cloud Run has no persistent disk. The chunks in `corpus/chunks/` are committed, so the build only embeds them. No API key is needed to build. |
+| Index and models | Baked into the image at build time | Cloud Run has no persistent disk. The chunks (`corpus/chunks/`) and their vectors (`corpus/embeddings.sqlite`) are committed, so the build only loads them into the index. No API key is needed to build. |
 | Billing mode | Request-based, 0–1 instances | Charged only while answering; one instance caps cost. |
 | Memory | 2 GiB, 1 vCPU | Torch plus two models, with headroom. Locally the loaded pipeline peaked at about 0.45 GB; Linux containers usually use more. |
 | Secret | `GROQ_API_KEY` in Secret Manager | Keeps the key out of the service config and the image. |
@@ -45,24 +45,28 @@ Cloud Run service "trunutri"  (one container, built from ./Dockerfile)
 
 ## 4. Step 1: Prepare the repository
 
-The redesigned frontend and the deployment changes are not committed yet. Commit them together so the deployed build matches what was tested.
+The deployment changes are committed (branch `initial-build`):
 
-**Files to commit:**
-
-| File | Change |
+| File | What it does for Cloud Run |
 |---|---|
-| `src/guidance_rag/ui/index.html` | The new design (Warm Editorial Wellness), one-paragraph answers with citation badges, collapsible Sources (collapsed by default), cited-evidence panel, light theme with a dark toggle. |
-| `src/guidance_rag/api.py`, `ARCHITECTURE.md` | Rename to "TruNutri RAG chatbot". |
-| `Dockerfile` | Bakes the reranker, the embedding model and the search index into the image; listens on `$PORT` (Cloud Run) and falls back to 8000 (docker compose). |
-
-`stitch_ai_nutrition_assistant_ui/` holds the design mockups. The app doesn't need it. Commit it as a design reference, or add it to `.dockerignore` to keep it out of the image.
+| `Dockerfile` | Bakes the reranker, the embedding model and the search index (from the committed vectors) into the image, then switches Hugging Face to offline mode (`HF_HUB_OFFLINE=1`), so a cold start loads everything from the image and never calls the Hub. Listens on `$PORT` (Cloud Run) and falls back to 8000 (docker compose). |
+| `corpus/embeddings.sqlite` | The vectors of the current chunks (3.8 MB), written by `python -m guidance_rag.ingest vectors` (the last step of `make ingest`). The build seeds its embedding cache from it, so it doesn't embed the corpus again: that took ~40 minutes on 4 CPUs, which would risk Cloud Build's time limit. A test fails if the file doesn't cover every chunk. |
+| `.gcloudignore` | What `--source .` uploads to Cloud Build: everything git ignores stays out (`.env` with the API key, `.venv`, caches, the local index, logs, raw downloads), plus `.git` and the design mockups. |
+| `.dockerignore` | Keeps the same files, and the design mockups, out of the image. |
+| `Makefile` | `make deploy` runs the Step 3 command (`SERVICE=trunutri`, `REGION=us-central1`; override either on the command line). |
+| `src/guidance_rag/ui/index.html`, `api.py` | The TruNutri design and name. |
 
 **Steps:**
 - [ ] Run the checks: `make test` (unit tests, lint and type checks).
-- [ ] Run the app locally (`make api`) and check http://localhost:8000: the page loads, an example question gets a cited answer, and Sources opens and closes.
-- [ ] Commit and push to `main`.
+- [ ] Optional, needs Docker: run the image the way Cloud Run does, on `$PORT` with no network, to check that it starts from what is baked in:
+  ```bash
+  docker build -t trunutri .
+  docker run --rm --network none -e PORT=8080 -e GROQ_API_KEY=x -p 8080:8080 trunutri
+  # in another terminal: curl localhost:8080/health   -> {"status":"ok","documents":7}
+  ```
+- [ ] Push to GitHub and merge into `main` (`git push -u origin initial-build`, then a pull request).
 
-**Done when:** `main` on GitHub contains the four changed files above and CI is green.
+**Done when:** `main` on GitHub has the files above and CI is green.
 
 ## 5. Step 2: Set up Google Cloud (once)
 
@@ -96,7 +100,7 @@ gcloud secrets add-iam-policy-binding groq-api-key \
 
 ## 6. Step 3: Deploy
 
-From the project root, on an up-to-date `main`:
+From the project root, on an up-to-date `main`, run `make deploy`, which runs:
 
 ```bash
 gcloud run deploy trunutri \
@@ -120,7 +124,7 @@ What the flags do:
 - `--cpu-boost` speeds up model loading on a cold start.
 - `FORWARDED_ALLOW_IPS=*` lets uvicorn read the visitor's real IP from Cloud Run's proxy, so the limit of 20 questions per minute applies per visitor. Without it, every visitor shares one limit. This is safe on Cloud Run because only Google's proxy can reach the container.
 
-The first build takes about 10–20 minutes: installing torch, downloading both models and embedding 903 chunks. Later builds reuse cached layers unless dependencies change.
+The first build takes about 10–15 minutes, mostly installing torch and downloading the two models; the index is built from the committed vectors, not by embedding the corpus. Later builds reuse cached layers unless dependencies change.
 
 **Done when:** the command prints `Service URL: https://trunutri-….run.app`.
 
@@ -132,8 +136,10 @@ Open the service URL and check each item:
 - [ ] The page shows the TruNutri design: cream background, the "Ask anything about food, nutrition & safety." headline, example cards, and the "Index ready · 7 documents" chip.
 - [ ] Click **Single document** (WHO salt): the answer reads as one paragraph with `[n]` badges. **Sources** is collapsed, opens on click, and "View source" links work.
 - [ ] Click **Cross-document** (cooking oils): the paragraph names each source ("According to …").
-- [ ] Click **Out of scope** (diabetes): the "This question needs a health professional" card appears.
-- [ ] Click **Not in corpus** (intermittent fasting): the "The guidance documents don't cover this" card appears.
+- [ ] Click **Recommendation** (Indian guideline on salt): a cited answer from ICMR-NIN.
+- [ ] Type "What should I eat to cure my type 2 diabetes?": the "This question needs a health professional" card appears.
+- [ ] Type "What does the guidance say about intermittent fasting?": the "The guidance documents don't cover this" card appears.
+- [ ] Type "How much protein does milk have?": answered from ICMR-NIN's food-group table (3.1 g per 100 g).
 - [ ] Pick one document in the library and ask a question: the answer cites only that document.
 - [ ] Toggle dark mode; check the page on a phone.
 - [ ] Run the end-to-end tests against the live service:
@@ -145,7 +151,7 @@ Open the service URL and check each item:
 
 ## 8. Updating and rolling back
 
-- **Ship a change:** merge to `main`, pull, and run the same `gcloud run deploy` command. Each deploy creates a new revision. Corpus changes (new chunks in `corpus/chunks/`) are picked up automatically, because the build re-indexes.
+- **Ship a change:** merge to `main`, pull, and run `make deploy` again. Each deploy creates a new revision. Corpus changes are picked up because the build re-indexes: run `make ingest` first, which also refreshes `corpus/embeddings.sqlite`, and commit both the chunks and the vectors. A chunk missing from the vectors file is embedded during the build, which is slow.
 - **Roll back:** in **Cloud Run → trunutri → Revisions**, send 100% of traffic to the previous revision, or run:
   ```bash
   gcloud run services update-traffic trunutri --to-revisions=<REVISION_NAME>=100
@@ -174,7 +180,7 @@ Check the billing page a week after launch to confirm spending is at or near $0.
 - **State resets on restart:** the LLM response cache, the Groq usage counter (`.cache/llm/usage.sqlite`) and the trace logs live in the container and reset whenever the instance restarts. Groq still enforces its own quotas server-side.
 - **Groq daily quota is shared:** a busy public link can exhaust it, after which `/chat` returns "The answer service is unavailable…" until the quota resets. The per-visitor limit slows this but doesn't prevent it.
 - **Fonts load from Google Fonts.** If they are blocked, the page falls back to system serif and sans-serif fonts.
-- **Model overrides:** the build bakes the default reranker and embedding models. If `RERANKER_MODEL` or `EMBEDDING_MODEL` is changed, the Dockerfile's bake step must use the same models, or the container downloads them on every cold start.
+- **Model overrides:** the build bakes the default reranker and embedding models, and the container runs with Hugging Face offline. If the models are changed, the Dockerfile's bake step must use the same ones, or the container can't load them and `/health` reports the error.
 
 ## 11. Troubleshooting
 
@@ -187,6 +193,7 @@ Check the billing page a week after launch to confirm spending is at or near $0.
 | `/chat` returns 503 "answer service is unavailable" | Groq quota or outage, or a missing or invalid key | Check the secret binding (Step 2) and Groq's console usage. |
 | Every visitor gets "Too many questions" | `FORWARDED_ALLOW_IPS` not set | Add `--set-env-vars "FORWARDED_ALLOW_IPS=*"` and redeploy. |
 | Page loads, but `/documents` or `/chat` returns 404 | Wrong service, or an old revision is serving traffic | Check **Revisions** and send traffic to the latest one. |
+| `/health` returns 503 mentioning "offline mode" or huggingface.co | A model the app loads isn't baked into the image | Bake the same models the code uses (Dockerfile bake step), and redeploy. |
 
 ---
 

@@ -12,3 +12,5 @@ corpus/raw/*
 .env
 .DS_Store
 embeddings.json
+# Design mockups (reference only; the app doesn't use them)
+stitch_ai_nutrition_assistant_ui

@@ -6,12 +6,16 @@
 RUN ?= uv run
 INGEST = $(RUN) python -m guidance_rag.ingest
 PORT ?= 8000
+# Google Cloud Run (deployment-plan.md). Needs gcloud, a project set with
+# `gcloud config set project …`, and the groq-api-key secret.
+SERVICE ?= trunutri
+REGION ?= us-central1
 
-.PHONY: help install ingest api ui test e2e eval redteam lint docker-up docker-ingest docker-e2e
+.PHONY: help install ingest api ui test e2e eval redteam lint docker-up docker-ingest docker-e2e deploy
 
 help:
 	@echo "install        uv sync with the embed and ocr extras"
-	@echo "ingest         fetch -> parse -> chunk -> index (all included documents)"
+	@echo "ingest         fetch -> parse -> chunk -> index -> vectors (all included documents)"
 	@echo "api            serve the API and chat page on http://localhost:$(PORT)"
 	@echo "ui             open the chat page in a browser (the API must be running)"
 	@echo "test           unit tests, lint and type checks (no index or API key needed)"
@@ -21,6 +25,7 @@ help:
 	@echo "docker-up      build and start the API and Qdrant"
 	@echo "docker-ingest  run the ingest inside the api container"
 	@echo "docker-e2e     end-to-end tests against the running Docker stack"
+	@echo "deploy         build and deploy to Google Cloud Run (SERVICE=$(SERVICE), REGION=$(REGION))"
 
 install:
 	uv sync --extra embed --extra ocr
@@ -30,6 +35,7 @@ ingest:
 	$(INGEST) parse --save
 	$(INGEST) chunk
 	$(INGEST) index
+	$(INGEST) vectors
 
 api:
 	$(RUN) uvicorn guidance_rag.api:app --host 0.0.0.0 --port $(PORT)
@@ -62,3 +68,12 @@ docker-ingest:
 
 docker-e2e:
 	E2E_BASE_URL=http://localhost:$(PORT) $(RUN) pytest -m e2e
+
+deploy:
+	gcloud run deploy $(SERVICE) --source . --region $(REGION) \
+		--allow-unauthenticated \
+		--memory 2Gi --cpu 1 \
+		--min-instances 0 --max-instances 1 \
+		--concurrency 10 --timeout 120 --cpu-boost \
+		--set-secrets "GROQ_API_KEY=groq-api-key:latest" \
+		--set-env-vars "FORWARDED_ALLOW_IPS=*"

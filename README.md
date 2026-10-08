@@ -188,7 +188,7 @@ uv sync --extra ocr --extra embed
 
 ### Ingestion
 
-`make ingest` runs the four steps below. Each can also run on its own, for all documents or one (`--doc DOC_ID`).
+`make ingest` runs the steps below, from fetching to writing the vectors file. Each can also run on its own, for all documents or one (`--doc DOC_ID`).
 
 ```bash
 uv run python -m guidance_rag.ingest fetch             # download included documents (skips ones already present)
@@ -197,13 +197,14 @@ uv run python -m guidance_rag.ingest check             # pages, text layer and t
 uv run python -m guidance_rag.ingest parse --save      # document trees -> corpus/parsed/{doc_id}.json
 uv run python -m guidance_rag.ingest chunk             # chunks -> corpus/chunks/{doc_id}.jsonl, QC -> corpus/qc/
 uv run python -m guidance_rag.ingest index             # embed changed chunks and update the index
+uv run python -m guidance_rag.ingest vectors           # chunk vectors -> corpus/embeddings.sqlite (for the Docker build)
 ```
 
 - **Parsing.** Each raw file becomes a document tree: nested sections holding typed blocks with page numbers. Cover pages, contents, reference lists, blank record templates and personalised meal plans are left out. Per-document settings live in the `parser` entry of each document in the registry, with a `notes` line explaining them. `parse --dump --doc DOC_ID` prints a document's outline, block counts and tables; `parse --full` adds every block's text, for review. A saved tree carries a fingerprint of the raw file, parser config, table overrides and parser code, and is re-parsed when any of them changes.
 - **OCR.** Scanned pages (FSSAI Milk pp. 74–75) are read with RapidOCR (`uv sync --extra ocr`). Without it, those pages are skipped with a warning.
 - **Table corrections.** When a table is parsed wrongly, save the right version as `corpus/overrides/{doc_id}/{table_id}.csv` (first row = header). `parse --dump` shows the `table_id`.
 - **Chunk files.** Each line of `corpus/chunks/{doc_id}.jsonl` is one chunk: document, publisher, year, section path, pages, deep link, the body (`text`) and the search text (`embed_text`, the body behind a short document and section header). The QC report per document lists sizes, split tables and any table that looks broken. The raw downloads are not committed; the parsed trees and chunks are, so a parser or chunker change shows up as a diff.
-- **Index.** Chunks are embedded with `Alibaba-NLP/gte-modernbert-base` (the first run downloads ~0.6 GB) and stored in a local Qdrant index in `.index/`, with vectors cached in `.cache/embeddings/`, so re-indexing only embeds changed chunks. `index --force` rebuilds the collection. The BM25 indexes over chunks and table rows are built in memory at start-up.
+- **Index.** Chunks are embedded with `Alibaba-NLP/gte-modernbert-base` (the first run downloads ~0.6 GB) and stored in a local Qdrant index in `.index/`, with vectors cached in `.cache/embeddings/`, so re-indexing only embeds changed chunks. `index --force` rebuilds the collection. The BM25 indexes over chunks and table rows are built in memory at start-up. `vectors` writes the current chunks' vectors to `corpus/embeddings.sqlite` (committed), so the Docker image is built from them instead of re-embedding the corpus; commit it together with the chunks.
 
 ### Running
 
@@ -216,6 +217,8 @@ make api                          # API and chat page on http://localhost:8000
 The API: `POST /chat` (`{"question": "…", "doc_filter": ["doc-id"]}`), `GET /documents`, `GET /health`, and the chat page at `/`. The response contract and error codes are in [ARCHITECTURE.md §10](ARCHITECTURE.md#10-api-contract). Every `/chat` call appends one line to `logs/traces.jsonl`, including the evidence and scores, the model's raw reply, dropped claims, per-stage timings and the final status. The `trace_id` in each response points to that line.
 
 **Docker:** `docker compose up -d --build` runs the API with a Qdrant server; `make docker-ingest` fills that server (the API loads it without a restart). The image also bakes in both models and an index built from the committed chunks, for single-container hosts without a disk such as Cloud Run ([deployment-plan.md](deployment-plan.md)); Compose ignores that index. After changing the corpus, run `make docker-ingest` again, then `docker compose restart api`.
+
+**Google Cloud Run:** `make deploy` builds the image on Cloud Build and deploys it as one public service (models and index baked in, the Groq key from Secret Manager). One-time setup, costs and checks: [deployment-plan.md](deployment-plan.md).
 
 **LLM replies are cached** in `.cache/llm/`, keyed on the whole request, so repeated questions and eval re-runs cost no Groq quota. A client-side rate limiter keeps requests within the free tier; when the daily quota runs out, `/chat` returns 503 instead of an answer.
 

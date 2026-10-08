@@ -18,20 +18,30 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencies first, so code changes don't reinstall them. On Linux torch comes from
-# the CPU-only index (pyproject.toml), which keeps CUDA out of the image.
-COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --locked --no-dev --extra embed --extra ocr --no-install-project
+# Dependencies first, so code and docs changes don't reinstall them (README.md is only
+# metadata; an empty stand-in keeps doc edits from invalidating this layer). On Linux
+# torch comes from the CPU-only index (pyproject.toml), which keeps CUDA out of the image.
+COPY pyproject.toml uv.lock ./
+RUN touch README.md && uv sync --locked --no-dev --extra embed --extra ocr --no-install-project
 
 COPY . .
 RUN uv sync --locked --no-dev --extra embed --extra ocr
 
 # Bake both models and the search index into the image, so a host without a persistent
-# disk (e.g. Cloud Run) starts ready. The chunks are committed, so this only embeds them;
-# no API key is needed. docker-compose sets QDRANT_URL and ignores the baked index.
-RUN python -c "from sentence_transformers import CrossEncoder; \
+# disk (e.g. Cloud Run) starts ready. The chunks and their vectors (corpus/embeddings.sqlite,
+# written by `ingest vectors`) are committed, so indexing reads the vectors instead of
+# embedding the corpus again (~40 min on 4 CPUs); only chunks missing from the file are
+# embedded. No API key is needed. docker-compose sets QDRANT_URL and ignores this index.
+RUN mkdir -p .cache/embeddings \
+    && cp corpus/embeddings.sqlite .cache/embeddings/vectors.sqlite \
+    && python -c "from sentence_transformers import CrossEncoder; \
 from guidance_rag.config import RetrievalConfig; CrossEncoder(RetrievalConfig().reranker_model)" \
     && python -m guidance_rag.ingest index
+
+# The models are in the image now: don't contact the Hugging Face Hub at start-up. On a
+# cold start that only adds time (and fails without network or under Hub rate limits).
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s \

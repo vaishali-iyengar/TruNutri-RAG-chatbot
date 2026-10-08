@@ -4,23 +4,30 @@
 sentence-transformers model (optional `embed` extra), and tests use a fake.
 `CachedEmbedder` stores document vectors in SQLite keyed by a hash of the model
 name and the text, so re-indexing embeds only chunks whose text changed.
+
+`export_vectors` writes the vectors of the current chunks to a committed file,
+`corpus/embeddings.sqlite`, in the cache's format. The Docker build seeds its cache from
+it, so building the image (e.g. on Cloud Build, for Cloud Run) doesn't embed the corpus
+again: that took ~40 min on 4 CPUs.
 """
 
 import hashlib
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
 
-from guidance_rag.config import EmbeddingConfig
+from guidance_rag.config import PROJECT_ROOT, EmbeddingConfig
 
 log = logging.getLogger(__name__)
 
 Vectors = npt.NDArray[np.float32]
+
+DEFAULT_VECTORS_FILE = PROJECT_ROOT / "corpus" / "embeddings.sqlite"
 
 
 class Embedder(Protocol):
@@ -138,3 +145,49 @@ class CachedEmbedder:
 
     def close(self) -> None:
         self._db.close()
+
+
+def export_vectors(
+    texts: Sequence[str],
+    model: str,
+    dest: Path = DEFAULT_VECTORS_FILE,
+    cache_dir: Path | None = None,
+    make_embedder: Callable[[], Embedder] | None = None,
+) -> tuple[int, int]:
+    """Write the vectors of `texts` (embedded with `model`) to `dest`, a fresh SQLite file
+    in the cache's format, with nothing else in it. Texts the cache doesn't have are
+    embedded first with `make_embedder()`, which is only called then. Returns (vectors
+    written, texts newly embedded)."""
+    cache_dir = cache_dir or EmbeddingConfig().cache_dir
+    keyed = {cache_key(model, t): t for t in texts}
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache = sqlite3.connect(cache_dir / "vectors.sqlite")
+    cache.execute("CREATE TABLE IF NOT EXISTS vectors (key TEXT PRIMARY KEY, vec BLOB)")
+    have = {k for (k,) in cache.execute("SELECT key FROM vectors")}
+    missing = [t for k, t in keyed.items() if k not in have]
+    if missing:
+        if make_embedder is None:
+            raise ValueError(
+                f"{len(missing)} text(s) aren't in the cache and no embedder was given"
+            )
+        embedder = CachedEmbedder(make_embedder(), cache_dir)
+        if embedder.name != model:
+            raise ValueError(f"embedder is {embedder.name!r}, expected {model!r}")
+        embedder.embed_documents(missing)
+        embedder.close()
+    rows = []
+    for key in sorted(keyed):
+        (vec,) = cache.execute("SELECT vec FROM vectors WHERE key = ?", (key,)).fetchone()
+        rows.append((key, vec))
+    cache.close()
+
+    tmp = dest.with_suffix(".tmp")
+    tmp.unlink(missing_ok=True)
+    out = sqlite3.connect(tmp)
+    out.execute("CREATE TABLE vectors (key TEXT PRIMARY KEY, vec BLOB)")
+    out.executemany("INSERT INTO vectors VALUES (?, ?)", rows)
+    out.commit()
+    out.execute("VACUUM")
+    out.close()
+    tmp.replace(dest)
+    return len(rows), len(missing)

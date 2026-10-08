@@ -1,13 +1,22 @@
 """Embedding cache (implementation-plan.md, 4.2), with a fake model."""
 
 import hashlib
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from guidance_rag.ingest.embed import CachedEmbedder, Vectors, cache_key
+from guidance_rag.config import EmbeddingConfig
+from guidance_rag.ingest.embed import (
+    DEFAULT_VECTORS_FILE,
+    CachedEmbedder,
+    Vectors,
+    cache_key,
+    export_vectors,
+)
+from guidance_rag.store import load_chunks
 
 
 class FakeEmbedder:
@@ -83,3 +92,58 @@ def test_queries_go_straight_to_the_model(fake: FakeEmbedder, tmp_path: Path) ->
     vector = cached.embed_query("how long do eggs keep?")
     assert vector.shape == (fake.dim,)
     assert fake.calls == []  # embed_query doesn't go through the document cache
+
+
+# --- Committed vectors for the Docker build ---------------------------------------------
+
+
+def stored_keys(path: Path) -> set[str]:
+    db = sqlite3.connect(path)
+    try:
+        return {k for (k,) in db.execute("SELECT key FROM vectors")}
+    finally:
+        db.close()
+
+
+def test_export_writes_only_the_given_texts_and_embeds_what_is_missing(tmp_path: Path) -> None:
+    cache_dir, dest = tmp_path / "cache", tmp_path / "embeddings.sqlite"
+    warm = CachedEmbedder(FakeEmbedder(), cache_dir)
+    warm.embed_documents(["old chunk", "kept chunk"])
+    warm.close()
+    made: list[FakeEmbedder] = []
+
+    def make() -> FakeEmbedder:
+        made.append(FakeEmbedder())
+        return made[-1]
+
+    written, embedded = export_vectors(
+        ["kept chunk", "new chunk"], "fake-model", dest, cache_dir, make
+    )
+
+    assert (written, embedded) == (2, 1)
+    assert made[0].calls == [["new chunk"]]  # only the missing text
+    assert stored_keys(dest) == {cache_key("fake-model", t) for t in ["kept chunk", "new chunk"]}
+
+
+def test_export_needs_no_model_when_everything_is_cached(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    warm = CachedEmbedder(FakeEmbedder(), cache_dir)
+    warm.embed_documents(["a chunk"])
+    warm.close()
+
+    written, embedded = export_vectors(["a chunk"], "fake-model", tmp_path / "v.sqlite", cache_dir)
+
+    assert (written, embedded) == (1, 0)
+    with pytest.raises(ValueError, match="no embedder"):
+        export_vectors(["not cached"], "fake-model", tmp_path / "v.sqlite", cache_dir)
+
+
+def test_the_committed_vectors_cover_every_chunk() -> None:
+    """The Docker build indexes from corpus/embeddings.sqlite; a chunk missing from it is
+    embedded during the build, which is slow. Run `python -m guidance_rag.ingest vectors`
+    (part of `make ingest`) after the chunks change."""
+    model = EmbeddingConfig().model
+    keys = {cache_key(model, c.embed_text) for c in load_chunks()}
+
+    assert DEFAULT_VECTORS_FILE.exists()
+    assert keys <= stored_keys(DEFAULT_VECTORS_FILE)

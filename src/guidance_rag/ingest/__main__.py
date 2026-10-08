@@ -5,6 +5,7 @@ python -m guidance_rag.ingest check [--doc DOC_ID ...]
 python -m guidance_rag.ingest parse [--doc DOC_ID ...] [--dump] [--full] [--save]
 python -m guidance_rag.ingest chunk [--doc DOC_ID ...]
 python -m guidance_rag.ingest index [--doc DOC_ID ...] [--force]
+python -m guidance_rag.ingest vectors        # write corpus/embeddings.sqlite for the Docker build
 """
 
 import argparse
@@ -18,7 +19,12 @@ from pathlib import Path
 from guidance_rag.config import PROJECT_ROOT
 from guidance_rag.ingest.check import check_raw_file
 from guidance_rag.ingest.chunker import DEFAULT_CHUNKS_DIR, chunk_document, write_chunks
-from guidance_rag.ingest.embed import CachedEmbedder, SentenceTransformerEmbedder
+from guidance_rag.ingest.embed import (
+    DEFAULT_VECTORS_FILE,
+    CachedEmbedder,
+    SentenceTransformerEmbedder,
+    export_vectors,
+)
 from guidance_rag.ingest.fetch import DEFAULT_RAW_DIR, FetchStatus, fetch_all, make_client
 from guidance_rag.ingest.index import build_index
 from guidance_rag.ingest.parse import DEFAULT_PARSED_DIR, parse_document, save_parsed
@@ -163,6 +169,21 @@ def cmd_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_vectors(args: argparse.Namespace) -> int:
+    from guidance_rag.config import EmbeddingConfig
+    from guidance_rag.store import load_chunks
+
+    texts = [c.embed_text for c in load_chunks(args.chunks_dir)]
+    written, embedded = export_vectors(
+        texts, EmbeddingConfig().model, args.out, make_embedder=SentenceTransformerEmbedder
+    )
+    shown = (
+        args.out.relative_to(PROJECT_ROOT) if args.out.is_relative_to(PROJECT_ROOT) else args.out
+    )
+    print(f"{written} vectors written to {shown} ({embedded} newly embedded)")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m guidance_rag.ingest")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY_PATH)
@@ -204,6 +225,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     index.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
     index.add_argument("--force", action="store_true", help="recreate the collection")
     index.set_defaults(func=cmd_index)
+
+    vectors = sub.add_parser(
+        "vectors", help="write the current chunks' vectors to corpus/embeddings.sqlite"
+    )
+    vectors.add_argument("--chunks-dir", type=Path, default=DEFAULT_CHUNKS_DIR)
+    vectors.add_argument("--out", type=Path, default=DEFAULT_VECTORS_FILE)
+    vectors.set_defaults(func=cmd_vectors)
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
