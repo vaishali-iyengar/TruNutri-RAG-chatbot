@@ -1,6 +1,6 @@
 # Implementation Plan: Dietary Guidance RAG Chatbot
 
-This plan breaks the build into phases. It follows the design in [ARCHITECTURE.md](ARCHITECTURE.md) and the requirements in [problem-statement.md](problem-statement.md). Section references like "§5.2" point to ARCHITECTURE.md.
+This plan breaks the build into phases. It follows the design in [ARCHITECTURE.md](ARCHITECTURE.md) and the requirements in [problem-statement.md](problem-statement.md). Section references like "§5.2" point to ARCHITECTURE.md. The product is named **TruNutri RAG chatbot**; the Python package is `guidance_rag`.
 
 Each phase lists its **goal**, **sub-tasks**, **deliverables** and **exit criteria**. A phase is done only when its exit criteria pass. Most exit criteria are automated tests.
 
@@ -28,10 +28,10 @@ Each sub-task has a number such as **2.3** (phase 2, sub-task 3). It is sized to
 | 6 | Grounded answer layer | #4 Answer layer, #5 Cross-document | 6.1 – 6.8 | ✅ Done |
 | 7 | Not-in-corpus refusal | #6a Not-in-corpus refusal | 7.1 – 7.5 | ✅ Done |
 | 8 | API and minimal chat UI | — (usable prototype) | 8.1 – 8.6 | ✅ Done |
-| 9 | Evaluation, tuning and hardening | All | 9.1 – 9.6 | 🟡 All targets met except p95 latency (8.4 s vs 8 s); eval CI not yet run on GitHub |
+| 9 | Evaluation, tuning and hardening | All | 9.1 – 9.8 | 🟡 Targets met except p95 latency (8.4 s vs 8 s); full eval to re-run after 9.7; eval CI not yet run on GitHub |
 | 10 | Documentation | README chunking write-up | 10.1 – 10.4 | Not started |
 
-Status as of 2026-10-07. Each phase's sub-tasks carry their own **Status** notes, and each finished phase has a **Result** line under its exit criteria.
+Status as of 2026-10-08. Each phase's sub-tasks carry their own **Status** notes, and each finished phase has a **Result** line under its exit criteria.
 
 ### Phase dependencies
 
@@ -817,7 +817,7 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 
 **Files:** `src/guidance_rag/api.py`, `tests/test_api.py`
 **Done when:** tests using FastAPI's `TestClient` (with a fake pipeline) pass for all three endpoints.
-**Status:** done (`src/guidance_rag/api.py`, `uvicorn guidance_rag.api:app` or `make api`). `/chat` returns `render.api_response()` (§10, plus `not_covered`); `/documents` gives each included document's title, publisher, year, URL and retrieval date. The pipeline loads once at startup (test). **Design choice:** if loading fails (e.g. no index yet), the API still starts: `/health` returns 503 with the reason, `/chat` returns 503, and each `/chat` call retries the load, so ingesting after `docker compose up` needs no restart. Questions run one at a time (a lock): local Qdrant and the models aren't thread-safe, and the Groq quota allows only a few answers a minute. An unexpected error is a 500 carrying the `trace_id`. Tests use the real `Pipeline` over the fake retriever and LLM.
+**Status:** done (`src/guidance_rag/api.py`, `uvicorn guidance_rag.api:app` or `make api`). `/chat` returns `render.api_response()` (§10, plus `not_covered`, and since 9.8 `answer`: the sentences in reading order); `/documents` gives each included document's title, publisher, year, URL and retrieval date. The pipeline loads once at startup (test). **Design choice:** if loading fails (e.g. no index yet), the API still starts: `/health` returns 503 with the reason, `/chat` returns 503, and each `/chat` call retries the load, so ingesting after `docker compose up` needs no restart. Questions run one at a time (a lock): local Qdrant and the models aren't thread-safe, and the Groq quota allows only a few answers a minute. An unexpected error is a 500 carrying the `trace_id`. Tests use the real `Pipeline` over the fake retriever and LLM.
 
 ### 8.2 Request validation
 - [x] Limit question length (e.g. 1,000 characters) and reject empty questions.
@@ -837,11 +837,12 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 
 ### 8.4 Chat UI
 - [x] Build a Streamlit app (or one static HTML page) with a question box and an optional "search only in" dropdown filled from `/documents`.
-- [x] Show answers as one section per document with clickable citations.
+- [x] Show answers with clickable citations (one section per document at first; one paragraph since 9.8).
 - [x] Show refusals differently: an info box for not-in-corpus and a referral box for out-of-scope.
 
 **Files:** `src/guidance_rag/ui/index.html`
 **Done when:** each golden category can be tried by hand in the UI and looks right.
+**Update (2026-10-08):** the page was redesigned in a separate session ("Warm Editorial Wellness", design files in `stitch_ai_nutrition_assistant_ui/`). It now has three columns: the session's questions and the guidance library on the left, the chat in the middle, and the cited evidence for the selected answer on the right, plus a light/dark toggle and a "search only in" picker under the question box. It also gets the **TruNutri** name. Answers render as one paragraph with a citation badge per sentence (9.8). Out-of-scope refusals show as a "needs a health professional" card, not-in-corpus as a "not in the documents" card. The start screen offers **three example questions** (Single document, Recommendation, Cross-document) instead of one per golden category. The redesign and these page changes are not committed yet.
 **Status:** done. Checked 2026-10-07 against the Docker stack by pressing every example button in headless Chrome and reading the screenshots: the dropdown lists the 7 documents; the 5 answer categories show one card per cited document (two plus the closing line for cross-document; only ICMR for the filtered one), and every `[n]` links to a source URL; not-in-corpus and unknown-document show the blue box, out-of-scope the amber referral box. **Choice:** one static HTML page served by the API at `/`, not Streamlit: no extra dependency or second server, and one container. One button per golden category fills in its first question (and the filter for the filtered one). Answers show one card per document, `[n]` marks linking to each citation's deep link, the fixed closing line for multi-document answers, `not_covered`, and a numbered source list with retrieval dates. Not-in-corpus refusals show in a blue info box, out-of-scope ones in an amber referral box. API text is inserted as text, never HTML.
 
 ### 8.5 Docker setup
@@ -888,7 +889,7 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 
 **Files:** `eval/run_eval.py`, `eval/report.md`
 **Done when:** one command produces the full report.
-**Status:** done (`make eval` = `python -m eval.run_eval --split all --judge --out eval/report.md`). **Final report (2026-10-08): 47/48 golden questions pass**; the one failure is nm-05, the known evidence-check false refusal (9.3). Runs the real pipeline with a trace per question (`logs/eval_traces.jsonl`) and reports Recall@10 from the traced ranking, status and cited documents per category, out-of-scope and not-in-corpus recall, false refusals (all answerable and near misses), blend rate, uncited claims, judged citation precision, and p50/p95 latency over questions answered live with quota waits taken out (`--no-cache` answers everything live). Each failure gets the stage it went wrong at, from its trace. `--check` exits 1 when a measured target is missed. **Holdout:** 10 questions (~20% of each category, `holdout: true` in golden.yaml), set after Phases 4–7 had tuned on the whole set, so they are clean only for Phase 9's fixes. Scoring logic is unit-tested (`tests/test_run_eval.py`). Holdout 10/10. Latency is measured separately, live (`eval/results/latency_live.md`); see the exit criteria.
+**Status:** done (`make eval` = `python -m eval.run_eval --split all --judge --out eval/report.md`). **Report of 2026-10-08 (before 9.7): 47/48 golden questions pass**; the one failure is nm-05, the known evidence-check false refusal (9.3). **To re-run:** 9.7 changed the golden set (now 50 questions: tl-05, tl-06, nc-05 and nc-06 replace os-08 and os-09) and the evidence of 8 questions, so `eval/report.md` is out of date until the next full run (needs a day's Groq quota). Runs the real pipeline with a trace per question (`logs/eval_traces.jsonl`) and reports Recall@10 from the traced ranking, status and cited documents per category, out-of-scope and not-in-corpus recall, false refusals (all answerable and near misses), blend rate, uncited claims, judged citation precision, and p50/p95 latency over questions answered live with quota waits taken out (`--no-cache` answers everything live). Each failure gets the stage it went wrong at, from its trace. `--check` exits 1 when a measured target is missed. **Holdout:** 10 questions (~20% of each category, `holdout: true` in golden.yaml), set after Phases 4–7 had tuned on the whole set, so they are clean only for Phase 9's fixes. Scoring logic is unit-tested (`tests/test_run_eval.py`). Holdout 10/10. Latency is measured separately, live (`eval/results/latency_live.md`); see the exit criteria.
 
 ### 9.2 Citation precision judge
 - [x] Add an LLM-judge step: for each claim and its cited chunk, ask whether the chunk supports the claim.
@@ -949,10 +950,11 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 
 **Files:** `src/guidance_rag/render.py`, `models.py` (`Sentence`, `SourceDocument.cite_as`), `pipeline.py`, `corpus/registry.yaml`, `tests/test_render.py`, `ui/index.html`
 **Done when:** a cross-document answer reads as one answer, and every sentence still cites exactly one document.
-**Status:** done. **Decision (project owner):** "one answer, each sentence sourced" over a fully merged answer, which would break brief #5. The claims, validator and prompts are unchanged, so no cached reply or eval result changes. The renderer joins each document's validated claims into one paragraph, best document first, each sentence with its own `[n]`. Where the source changes, a code-built lead-in from the registry's new `cite_as` field names it ("According to WHO's healthy diet fact sheet, …"), keeping names and acronyms capitalised. The API adds `answer` (sentences in order, each with `doc_id` and citations) next to `sections`. The fixed closing line is gone, since the lead-ins name each source. The chat page renders `answer` as one paragraph with a citation badge per sentence. **Note:** `ui/index.html` also holds a redesign from a separate session that isn't committed yet, so this page change is committed with it, not here.
+**Status:** done. **Decision (project owner):** "one answer, each sentence sourced" over a fully merged answer, which would break brief #5. The claims, validator and prompts are unchanged, so no cached reply or eval result changes. The renderer joins each document's validated claims into one paragraph, best document first, each sentence with its own `[n]`. Where the source changes, a code-built lead-in from the registry's new `cite_as` field names it ("According to WHO's healthy diet fact sheet, …"), keeping names and acronyms capitalised. The API adds `answer` (sentences in order, each with `doc_id` and citations) next to `sections`. The fixed closing line is gone, since the lead-ins name each source. The chat page renders `answer` as one paragraph with a citation badge per sentence. **Note:** `ui/index.html` also holds the redesign from a separate session (8.4), which isn't committed yet, so this page change is committed with it, not here. It doesn't touch the claims, so no eval metric changes.
 
 ### Deliverables
-- `eval/run_eval.py`, `eval/judge.py`, an eval report (`eval/report.md`), an expanded golden set and the eval CI job.
+- `eval/run_eval.py`, `eval/judge.py`, an eval report (`eval/report.md`), an expanded golden set (50 questions, 10 held out) and the eval CI job.
+- `eval/redteam.yaml` (30 prompts), `eval/results/error_analysis.md`, `eval/results/judge_check.md`, `eval/results/latency_live.md`; failure handling in `api.py`, `llm.py` and `rate_limit.py` (`tests/test_failure_handling.py`).
 
 ### Exit criteria (targets)
 | Metric | Target | Result (2026-10-08) |
@@ -965,6 +967,8 @@ Follow the flowchart in §6.6. Write each check as a separate function so it can
 | Blend rate | 0 | 0 ✅ |
 | Claims without citation in output | 0 | 0 ✅ |
 | p95 latency | ≤ 8 s | **8.4 s ❌**, narrowly (6 live questions; p50 4.3–5.2 s; was 9.9 s before fixes G and H; the slowest question, two-part cd-01, moves with machine load) |
+
+Measured before 9.7 changed nutrient handling and the golden set; the next full run (9.1) re-checks every row. 9.8 changed only the layout.
 
 ---
 
@@ -1022,9 +1026,10 @@ This section is required by the brief.
 | #3 Retrieval filtered to one named document | 4.5, 4.7 | Filter-only test, analyzer test |
 | #4 Answers only from retrieved chunks | 6.2 – 6.5 | Validator tests, citation precision |
 | #4 Every claim cited with name, publisher, year, link | 6.6 | Renderer test, "0 uncited claims" metric |
-| #5 Cross-document answers, never blended | 4.6, 6.4, 6.8 | Per-doc coverage, blend rate = 0 |
+| #5 Cross-document answers, never blended | 4.6, 6.4, 6.8, 9.8 | Per-doc coverage, blend rate = 0; render test: one document per sentence |
 | #6a Not-in-corpus refusal naming what was searched | 7.1 – 7.4 | Golden not-in-corpus category |
-| #6b Out-of-scope refusal with referral, enforced in code | 5.1 – 5.6 | Scope-guard tests, "no LLM called" test |
+| #6b Out-of-scope refusal with referral, enforced in code | 5.1 – 5.7, 9.4 | Scope-guard tests, "no LLM called" test, red team |
+| Nutrient values for single foods (brief: Milestone 3) | 9.7: answered from the corpus where it has them (owner's decision, 2026-10-08) | Golden tl-05, tl-06 (answered), nc-05, nc-06 (not in corpus) |
 
 ---
 
@@ -1038,3 +1043,5 @@ This section is required by the brief.
 | Thresholds over-fit to a small golden set | Medium | Medium | Grow the golden set in 9.4; hold out 20% of questions for final scoring (9.1) |
 | Source URLs change or disappear | Medium | Low | Keep raw copies and hashes; record retrieval date; re-fetch reports drift |
 | Corpus count (7) leaves too little overlap for cross-document questions | Low | Medium | Choose cross-document golden questions in 0.5 and check that coverage exists; swap in a reserve document if needed |
+| Groq free-tier quota (200K tokens/day per model) runs out during evals | High | Medium | LLM reply cache; a daily-limit 429 blocks the model until reset and returns 503 (9.5); the limiter counts per UTC day as Groq does; prompt changes for one question type go into the message, not the system prompt (9.7) |
+| Nutrient answers quote the wrong subject (a meal plan's total, an infant recipe's portion) | Medium | Medium | Nutrient-question note in the prompt; validator checks the claim's own table row; trap questions nc-05, nc-06 in the golden set (9.7) |
