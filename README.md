@@ -6,6 +6,25 @@ A chatbot that answers questions about food, nutrition and food safety **only** 
 
 Docs: [problem statement](problem-statement.md) · [architecture](ARCHITECTURE.md) · [implementation plan](implementation-plan.md) (build log, decisions, measurements) · [deployment](deployment-plan.md)
 
+## Tech stack
+
+| Layer | Choice | Deploy target |
+| --- | --- | --- |
+| Frontend | One static HTML page (vanilla JS, CSS), served by the backend | [Google Cloud Run](https://cloud.google.com/run) (same container) |
+| Backend | [FastAPI](https://fastapi.tiangolo.com/) + [uvicorn](https://www.uvicorn.org/), Python 3.12, [Pydantic](https://docs.pydantic.dev/) | [Google Cloud Run](https://cloud.google.com/run), key in [Secret Manager](https://cloud.google.com/security/products/secret-manager) |
+| Retrieval | [Qdrant](https://qdrant.tech/) (local mode) + [rank_bm25](https://github.com/dorianbrown/rank_bm25), [sentence-transformers](https://sbert.net/): `gte-modernbert-base` embeddings, `ms-marco-MiniLM-L-12-v2` reranker | Baked into the container image |
+| Model | [Groq](https://groq.com/) (`groq` SDK): `openai/gpt-oss-120b` for answers, `openai/gpt-oss-20b` for checks | Groq-hosted inference API |
+| Ingestion | [PyMuPDF](https://pymupdf.readthedocs.io/), [Beautiful Soup](https://www.crummy.com/software/BeautifulSoup/), [RapidOCR](https://github.com/RapidAI/RapidOCR), [tiktoken](https://github.com/openai/tiktoken) | Offline (`make ingest`); output committed |
+| Tooling | [uv](https://docs.astral.sh/uv/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy-lang.org/), [pytest](https://pytest.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions) | — |
+
+**Frontend:** one chat page with three columns. The left shows the session's questions and the guidance library, the middle is the chat, and the right shows the cited evidence for the selected answer. It has a light/dark toggle and a "search only in" picker. It calls the API on the same origin, so it needs no separate hosting or CORS.
+
+**Backend:** a small REST API (`POST /chat`, `GET /documents`, `GET /health`) that owns the whole pipeline. It runs the scope rules, retrieval, the sufficiency gate, generation, the citation validator and the renderer. It also enforces a per-visitor rate limit and a time limit, and writes a trace for every request.
+
+**Retrieval:** hybrid dense + BM25 search (plus table rows), fused with RRF and reranked by a cross-encoder. The index and both models are built into the image, so a cold start needs no download.
+
+**Model:** strict structured outputs (JSON schema), so the model returns claims with chunk IDs, never links or titles; citations are filled in by code. The smaller model runs the scope classifier and the "does this evidence answer it?" check.
+
 ## Quick start
 
 You need a [Groq API key](https://console.groq.com/keys) (free tier) and either Docker or [uv](https://docs.astral.sh/uv/).
